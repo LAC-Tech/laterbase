@@ -19,6 +19,8 @@ Users in industrys where the domain is naturally eventful. (I'm primarily thinki
 
 ## Functional Specifications
 
+Leave the format of events and aggregates completely up to the user. For laterbase, it's a series of bytes. Those bytes could be JSON, serialized objects, whatever.
+
 ### HTTP Endpoints
 
 #### Write one or more events
