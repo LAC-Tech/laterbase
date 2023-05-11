@@ -26,6 +26,11 @@ Users in industrys where the domain is naturally eventful. (I'm primarily thinki
 POST /e/{aggregate-root}
 ```
 
+#### Event changes feed
+```
+GET /e/{aggregate-root}?vv={version-vector} 
+```
+
 #### Read all aggregates (paginated)
 ```
 GET /a/{aggregate-root}
@@ -34,11 +39,6 @@ GET /a/{aggregate-root}
 #### Read single aggregate
 ```
 GET /a/{aggregate-root}/{aggregate-id}
-```
-
-#### Changes feed
-```
-GET /e/{aggregate-root}?vv={version-vector} 
 ```
 
 Gets all the events the user *doesn't know about*.
@@ -55,6 +55,10 @@ Laterbase should be a library - provide your own code for names of event roots, 
 
 Modelling the entire database as a grow only set, using delta states.
 Each aggregate would be a different database in LMDB. Or would it be an ENV? LMDB only has one writer per env.
+
+#### Snapshots
+
+Persist them on read. Reads are fast in LMDB, and we might as well insert on demand.
 
 ### Why LMDB?
 
@@ -111,3 +115,9 @@ Custom
 - Sorted version using hybrid logical clocks
 - Test backdating
 
+## References
+
+- Almeida, Paulo Sérgio; Shoker, Ali; Baquero, Carlos (2016-03-04). "Delta State Replicated Data Types". Journal of Parallel and Distributed Computing. 111: 162–173
+- Shapiro, Marc; Preguiça, Nuno; Baquero, Carlos; Zawirski, Marek (13 January 2011). "A Comprehensive Study of Convergent and Commutative Replicated Data Types". Rr-7506.
+- Douglas Parker, Gerald Popek, Gerard Rudisin, Allen Stoughton, Bruce Walker, Evelyn Walton, Johanna Chow, David Edwards, Stephen Kiser, and Charles Kline. "Detection of mutual inconsistency in distributed systems.". Transactions on Software Engineering. 1983
+- Carlos Baquero and Nuno Preguiça. "Why Logical Clocks are Easy". ACM Queue Volume 14, Issue 1. 2016.
