@@ -125,6 +125,14 @@ Custom
 - Delta state version. Make sure it passes tests.
 - Sorted version using hybrid logical clocks
 - Test backdating
+- Basic aggregates
+- Aggregate snapshot on read
+- Factor out in-memory storage engine, make a trait
+- HTTP Server
+- More tests with tokio-rs turmoil, or whatever works
+- Persistent storage using LMDB or similar
+- ???
+- Profit
 
 ## References
 
