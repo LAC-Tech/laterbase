@@ -4,22 +4,31 @@
 
 ### Overview
 
-A fast, highly available event store, for use as a foundational data store for industires like supply chain.
+A fast, highly available event store, for use as a foundational data store for industries like supply chain.
 
 ### Target Users
 
-Users in industrys where the domain is naturally eventful. (I'm primarily thinking of supply chain & logistics, but I'm sure there's others). Probably smaller outfits where the clumsiness of traditional ERPs is failing them. Logistics is probably an even more specific target, as they record more info "in the field" where network resiliency matters.
+Users in industries where the domain is naturally eventful. (I'm primarily thinking of supply chain & logistics, but I'm sure there's others). Probably smaller outfits where the clumsiness of traditional ERPs is failing them. Logistics is probably an even more specific target, as they record more info "in the field" where network resiliency matters.
 
 ### Business Objectives
 
-- Can handle network outages; allow events to be recorded locally and synced later
-- Allow back-dating
-- High performance - specifically designed for event sourcing
-- Extensible: users provide their own schemas and aggregation functions
+- Improve operational efficiency for supply chain and logistics industries.
+- Ensure data resiliency during network outages through local event recording and syncing.
+- Flexibility - users can define their own formats & schemas, that work with their existing systems. 
+- Performance that's purely focused on event sourcing workflows, nothing else. 
+- Support multi-platform usage on servers, mobile phones, and web apps.
+
+### Key Features
+
+- Network outage resilience. Events are recorded locally and synced later when network conditions allow it, with no loss of data.
+- Back-dating: events can be written retroactively, allowing the integration of existing and third party data.
+- Extensibility: Provide users with the ability to define their own schemas and aggregation functions to suit their particular needs.
+- Uses high performance tools to ensure efficient processing
+- Concentrates solely on event sourcing and syncing, keeping the system streamlined and purpose-driven.
 
 ## Functional Specifications
 
-Leave the format of events and aggregates completely up to the user. For laterbase, it's a series of bytes. Those bytes could be JSON, serialized objects, whatever.
+Leave the format of events and aggregates completely up to the user. For laterbase, it's a byte sequence. Those bytes could be JSON, serialized objects, whatever.
 
 ### HTTP Endpoints
 
@@ -56,7 +65,7 @@ Completely out of scope! Plus CQRS and all that.
 Laterbase should be a library - provide your own code for names of event roots, how to aggregate events, than it spins up a server.
 
 Modelling the entire database as a grow only set, using delta states.
-Each aggregate would be a different database in LMDB. Or would it be an ENV? LMDB only has one writer per env.
+Each aggregate would be a different database in LMDB. Or would it be an env? LMDB only has one writer per env.
 
 #### Snapshots
 
@@ -66,7 +75,7 @@ Persist them on read. Reads are fast in LMDB, and we might as well insert on dem
 
 To clarify, not 100% that LMDB should be the server side backing store. But I like it because...
 
-- simple and does one thing. less to learn/remember
+- simple and does one thing. Less to learn/remember
 - stable
 - well documented
 - easy to build
@@ -82,7 +91,7 @@ To clarify, not 100% that LMDB should be the server side backing store. But I li
 - zero overhead calling C libs (probably needed for embedded K/V stores)
 - standard library is big and well documented
 - healthy ecosystem
-- fine-graiend control of memory layout
+- fine-grained control of memory layout
 - kind of functional, which is nice
 - tooling is great
 
