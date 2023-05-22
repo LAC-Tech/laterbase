@@ -36,9 +36,10 @@ Architecture
 
 erDiagram
 	SERVER || --|{ DB 
-	DB ||--|| EVENT STREAM
+	DB ||--|| EVENT-STREAM
 	DB ||--o{ VIEW
 ```
+
 
 ### Event Key 
 
@@ -64,27 +65,22 @@ User defined
 
 #### Write one or more events
 ```
-POST /e/{aggregate-root}
+POST /{db-name}/e
 ```
 
 #### Event changes feed
 ```
-GET /e/{aggregate-root}?vv={version-vector} 
-```
-
-#### Read all aggregates (paginated)
-```
-GET /a/{aggregate-root}
-```
-
-#### Read single aggregate
-```
-GET /a/{aggregate-root}/{aggregate-id}
+GET /{db-name}/e?vv={version-vector} 
 ```
 
 Gets all the events the user *doesn't know about*.
 
 This is not the same as getting all events that have happened since a certain time, since it's possible to backdate events. They are however returned in order of their hybrid logical clocks.
+
+#### Query View
+```
+GET /{db-name}/{view-name}
+```
 
 ### Read model
 
