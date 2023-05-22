@@ -4,7 +4,7 @@
 
 ### Overview
 
-A fast, highly available event store, for use as a foundational data store for industries like supply chain.
+A fast, highly available event store. Designed to be the source of truth for event-driven industries like supply chain & logistics.
 
 ### Target Users
 
@@ -15,12 +15,13 @@ Users in industries where the domain is naturally eventful. (I'm primarily think
 - Improve operational efficiency for supply chain and logistics industries.
 - Ensure data resiliency during network outages through local event recording and syncing.
 - Flexibility - users can define their own formats & schemas, that work with their existing systems. 
-- Performance that's purely focused on event sourcing workflows, nothing else. 
+- Performance: purely focused on writing and aggregating event streams, nothing else. 
 - Support multi-platform usage on servers, mobile phones, and web apps.
 
 ### Key Features
 
 - Network outage resilience. Events are recorded locally and synced later when network conditions allow it, with no loss of data.
+- Flexibility: multi-master, CRDT based system means events can be sent in any order, and servers can be on-device, on-premise or on the cloud.
 - Back-dating: events can be written retroactively, allowing the integration of existing and third party data.
 - Extensibility: Provide users with the ability to define their own schemas and aggregation functions to suit their particular needs.
 - Uses high performance tools to ensure efficient processing
@@ -28,7 +29,36 @@ Users in industries where the domain is naturally eventful. (I'm primarily think
 
 ## Functional Specifications
 
-Leave the format of events and aggregates completely up to the user. For laterbase, it's a byte sequence. Those bytes could be JSON, serialized objects, whatever.
+```mermaid
+---
+Architecture
+---
+
+erDiagram
+	SERVER || --|{ DB 
+	DB ||--|| EVENT STREAM
+	DB ||--o{ VIEW
+```
+
+### Event Key 
+
+Each key needs to be both unique, and sortable.
+
+8 byte hybrid logical clock timestamp
+8 bytes random padding
+
+### Event Value format
+
+4 bytes for the event type, 4 bytes for the event version.
+The rest of the bytes are up to the user. Could be JSON, serialized data, whatever.
+
+### Aggregate Key
+
+User defined
+
+### Aggregate Value
+
+User defined
 
 ### HTTP Endpoints
 
@@ -58,11 +88,16 @@ This is not the same as getting all events that have happened since a certain ti
 
 ### Read model
 
-Completely out of scope! Plus CQRS and all that.
+Maybe it's completely out of scope! Plus CQRS and all that.
+
+Or maybe couchDB map reduce views over events. I feel like querying the actual event streams is going to be more useful when dealing with naturally eventful domains.
 
 ## Design specifications
 
 Laterbase should be a library - provide your own code for names of event roots, how to aggregate events, than it spins up a server.
+
+One LMDB env per aggregate root. IE a single LMDB env ha 
+
 
 Modelling the entire database as a grow only set, using delta states.
 Each aggregate would be a different database in LMDB. Or would it be an env? LMDB only has one writer per env.
