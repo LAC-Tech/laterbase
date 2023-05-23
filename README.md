@@ -34,7 +34,7 @@ Users in industries where the domain is naturally eventful. (I'm primarily think
 Architecture
 ---
 
-erDiagram
+erDiagram;
 	SERVER ||--|{ DB;
 	DB ||--|| EVENT-STREAM;
 	DB ||--o{ VIEW;
