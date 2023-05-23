@@ -35,7 +35,7 @@ Architecture
 ---
 
 erDiagram
-	SERVER || --|{ DB 
+	SERVER ||--|{ DB 
 	DB ||--|| EVENT-STREAM
 	DB ||--o{ VIEW
 ```
