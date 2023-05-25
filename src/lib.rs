@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 
+use rand::prelude::*;
+
+#[derive(Debug, PartialEq)]
 struct DB {
 	events: std::collections::HashSet<u8>
 }
@@ -18,8 +21,8 @@ impl DB {
 		self.events.contains(&data)
 	}
 
-	fn merge(&mut self, other: DB) {
-		self.events.extend(other.events.into_iter());
+	fn merge(&mut self, other: &DB) {
+		self.events.extend(other.events.clone().into_iter());
 	}
 }
 
@@ -36,6 +39,27 @@ mod tests {
 			db.add(n);
 
 			assert!(db.lookup(n));
+		}
+
+		#[test]
+		fn idempotent(len in 0..0xFF) {
+			let mut rng = rand::rngs::StdRng::from_entropy();
+			let mut bytes = vec![0u8; len as usize];
+			rng.fill_bytes(&mut bytes);
+
+			let mut db1 = DB::new();
+			let mut db2 = DB::new();
+
+			for b in bytes {
+				db1.add(b);
+				db2.add(b);
+			}
+
+			db1.merge(&db2);
+			
+
+			assert_eq!(db1, db2);
+
 		}
 	}
 
