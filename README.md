@@ -30,10 +30,10 @@ Users in industries where the domain is naturally eventful. (I'm primarily think
 ## Functional Specifications
 
 ```mermaid
-erDiagram;
-	SERVER ||--|{ DB;
-	DB ||--|| EVENT-STREAM;
-	DB ||--o{ VIEW;
+erDiagram
+	SERVER ||--|{ DB : accesses
+	DB ||--|| EVENT-STREAM : stores
+	DB ||--o{ VIEW : has
 ```
 
 
