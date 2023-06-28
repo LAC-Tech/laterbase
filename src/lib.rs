@@ -54,10 +54,32 @@ mod tests {
 			}
 
 			db1.merge(&db2);
-
 			assert_eq!(db1, db2);
+		}
+		
+		// (a . b) . c = a . (b . c)
+		#[test]
+		fn associative(len1 in 0..0xFF, len2 in 0..0xFF, len3 in 0..0xFF) {
+			let mut rng = rand::random();
+			let mut bytes1 = vec![0u8; len1 as usize];
+			let mut bytes2 = vec![0u8; len2 as usize];
+			let mut bytes3 = vec![0u8; len2 as usize];
 
+			let mut db1 = DB::new();
+			let mut db2 = DB::new();
+			let mut db3 = DB::new();
+
+			for b in bytes1 {
+				db1.add(b);
+			}
+
+			for b in bytes2 {
+				db2.add(b);
+			}
+
+			for b in bytes3 {
+				db3.add(b);
+			}
 		}
 	}
-
 }
