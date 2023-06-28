@@ -1,16 +1,11 @@
-use std::collections::HashSet;
-use std::hash::Hash;
-
-use rand::prelude::*;
-
 #[derive(Debug, PartialEq)]
 struct DB {
-	events: std::collections::HashSet<u8>
+	events: std::collections::BTreeSet<u8>
 }
 
 impl DB {
 	fn new() -> Self {
-		Self { events: std::collections::HashSet::new()}
+		Self { events: std::collections::BTreeSet::new() }
 	}
 
 	fn add(&mut self, data: u8) {
@@ -31,22 +26,25 @@ mod tests {
     use super::*;
 	use proptest::prelude::*;
 
+	fn arb_db() -> impl Strategy<Value = DB> {
+        prop::collection::btree_set(0u8..=255u8, 0..100)
+            .prop_map(|events| DB { events })
+	}
+
+	fn arb_bytes(max_len: usize) -> impl Strategy<Value = Vec<u8>> {
+		prop::collection::vec(any::<u8>(), 0..=max_len)
+	}
+
 	proptest! {
 		#[test] 
 		fn can_add_and_query_single_element(n in u8::MIN..u8::MAX) {
 			let mut db = DB::new();
-
 			db.add(n);
-
 			assert!(db.lookup(n));
 		}
 
 		#[test]
-		fn idempotent(len in 0..0xFF) {
-			let mut rng = rand::rngs::StdRng::from_entropy();
-			let mut bytes = vec![0u8; len as usize];
-			rng.fill_bytes(&mut bytes);
-
+		fn idempotent(bytes in arb_bytes(500)) {
 			let mut db1 = DB::new();
 			let mut db2 = DB::new();
 
@@ -56,7 +54,6 @@ mod tests {
 			}
 
 			db1.merge(&db2);
-			
 
 			assert_eq!(db1, db2);
 
