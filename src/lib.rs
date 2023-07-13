@@ -44,7 +44,7 @@ mod tests {
 	    })
 	}
 
-	const N_BYTES: usize = 5;
+	const N_BYTES: usize = 500;
 	proptest! {
 		#[test] 
 		fn can_add_and_query_single_element(n in u8::MIN..u8::MAX) {

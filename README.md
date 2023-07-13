@@ -8,7 +8,7 @@ A fast, highly available event store. Designed to be the source of truth for eve
 
 ### Target Users
 
-Users in industries where the domain is naturally eventful. (I'm primarily thinking of supply chain & logistics, but I'm sure there's others). Probably smaller outfits where the clumsiness of traditional ERPs is failing them. Logistics is probably an even more specific target, as they record more info "in the field" where network resiliency matters.
+Users in industries where the domain is naturally eventful. (I'm primarily thinking of supply chain & logistics, but I'm sure there's others). Probably smaller outfits where the clumsiness of traditional ERPs is failing them. Logistics is an even more specific target, as they record more info "in the field" where network resiliency matters.
 
 ### Business Objectives
 
@@ -16,7 +16,7 @@ Users in industries where the domain is naturally eventful. (I'm primarily think
 - Ensure data resiliency during network outages through local event recording and syncing.
 - Flexibility - users can define their own formats & schemas, that work with their existing systems. 
 - Performance: purely focused on writing and aggregating event streams, nothing else. 
-- Support multi-platform usage on servers, mobile phones, and web apps.
+- Support multi-platform usage on servers, mobile phones, and web apps. Anything can be a master node.
 
 ### Key Features
 
@@ -35,7 +35,6 @@ erDiagram
 	DB ||--|| EVENT-STREAM : stores
 	DB ||--o{ VIEW : has
 ```
-
 
 ### Event Key 
 
@@ -82,17 +81,15 @@ GET /{db-name}/{view-name}
 
 Maybe it's completely out of scope! Plus CQRS and all that.
 
-Or maybe couchDB map reduce views over events. I feel like querying the actual event streams is going to be more useful when dealing with naturally eventful domains.
+Or maybe couchDB style map-reduce views over events. I feel like querying the actual event streams is going to be more useful when dealing with naturally eventful domains.
 
 ## Design specifications
 
 Laterbase should be a library - provide your own code for names of event roots, how to aggregate events, than it spins up a server.
 
-One LMDB env per aggregate root. IE a single LMDB env ha 
-
+One LMDB env per aggregate root. IE a single LMDB env has an event database as well as an aggregate one.
 
 Modelling the entire database as a grow only set, using delta states.
-Each aggregate would be a different database in LMDB. Or would it be an env? LMDB only has one writer per env.
 
 #### Snapshots
 
@@ -125,7 +122,7 @@ To clarify, not 100% that LMDB should be the server side backing store. But I li
 ### Why not Zig?
 
 - Not 1.0 yet
-- No mature web microframework
+- No mature web micro-framework
 - Less expressive than rust
 
 ### Why Axum?
@@ -148,7 +145,7 @@ Custom
 
 ## Roadmap
 
-- G-Set in rust (copy JS version, but make it mutable)
+- ~~G-Set in rust (copy JS version, but make it mutable)~~
 - Delta state version. Make sure it passes tests.
 - Sorted version using hybrid logical clocks
 - Test backdating
