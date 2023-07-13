@@ -35,6 +35,7 @@ mod tests {
 		prop::collection::vec(any::<u8>(), 0..=max_len)
 	}
 
+	const N_BYTES: usize = 500;
 	proptest! {
 		#[test] 
 		fn can_add_and_query_single_element(n in u8::MIN..u8::MAX) {
@@ -44,7 +45,7 @@ mod tests {
 		}
 
 		#[test]
-		fn idempotent(bytes in arb_bytes(500)) {
+		fn idempotent(bytes in arb_bytes(N_BYTES)) {
 			let mut db1 = DB::new();
 			let mut db2 = DB::new();
 
@@ -59,27 +60,39 @@ mod tests {
 		
 		// (a . b) . c = a . (b . c)
 		#[test]
-		fn associative(len1 in 0..0xFF, len2 in 0..0xFF, len3 in 0..0xFF) {
-			let mut rng = rand::random();
-			let mut bytes1 = vec![0u8; len1 as usize];
-			let mut bytes2 = vec![0u8; len2 as usize];
-			let mut bytes3 = vec![0u8; len2 as usize];
+		fn associative(
+			a_bytes in arb_bytes(N_BYTES), 
+			b_bytes in arb_bytes(N_BYTES),
+			c_bytes in arb_bytes(N_BYTES)
+		) {
+			let (mut db_left_a, mut db_left_b, mut db_left_c) = 
+				(DB::new(), DB::new(), DB::new());
 
-			let mut db1 = DB::new();
-			let mut db2 = DB::new();
-			let mut db3 = DB::new();
+			let (mut db_right_a, mut db_right_b, mut db_right_c) = 
+				(DB::new(), DB::new(), DB::new());
 
-			for b in bytes1 {
-				db1.add(b);
+			for b in a_bytes {
+				db_left_a.add(b);
+				db_right_a.add(b);
 			}
 
-			for b in bytes2 {
-				db2.add(b);
+			for b in b_bytes {
+				db_left_b.add(b);
+				db_right_b.add(b);
 			}
 
-			for b in bytes3 {
-				db3.add(b);
+			for b in c_bytes {
+				db_left_c.add(b);
+				db_right_c.add(b);
 			}
+
+			db_left_a.merge(&db_left_b);
+			db_left_a.merge(&db_left_c);
+
+			db_right_b.merge(&db_right_c);
+			db_right_a.merge(&db_right_b);
+
+			assert_eq!(db_left_a, db_right_a);
 		}
 	}
 }
