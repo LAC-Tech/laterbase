@@ -26,13 +26,22 @@ mod tests {
     use super::*;
 	use proptest::prelude::*;
 
-	fn arb_db() -> impl Strategy<Value = DB> {
-        prop::collection::btree_set(0u8..=255u8, 0..100)
-            .prop_map(|events| DB { events })
-	}
-
 	fn arb_bytes(max_len: usize) -> impl Strategy<Value = Vec<u8>> {
 		prop::collection::vec(any::<u8>(), 0..=max_len)
+	}
+
+	fn arb_db_pairs(max_n_bytes: usize) -> impl Strategy<Value = (DB, DB)> {
+		arb_bytes(max_n_bytes).prop_map(|bytes| {
+	        let mut db1 = DB::new();
+	        let mut db2 = DB::new();
+
+	        for b in &bytes {
+	            db1.add(*b);
+	            db2.add(*b);
+	        }
+
+	        (db1, db2)
+	    })
 	}
 
 	const N_BYTES: usize = 500;
@@ -45,47 +54,18 @@ mod tests {
 		}
 
 		#[test]
-		fn idempotent(bytes in arb_bytes(N_BYTES)) {
-			let mut db1 = DB::new();
-			let mut db2 = DB::new();
-
-			for b in bytes {
-				db1.add(b);
-				db2.add(b);
-			}
-
+		fn idempotent((mut db1, db2) in arb_db_pairs(N_BYTES)) {
 			db1.merge(&db2);
 			assert_eq!(db1, db2);
 		}
-		
-		// (a . b) . c = a . (b . c)
+	
+			// (a . b) . c = a . (b . c)
 		#[test]
 		fn associative(
-			a_bytes in arb_bytes(N_BYTES), 
-			b_bytes in arb_bytes(N_BYTES),
-			c_bytes in arb_bytes(N_BYTES)
+			(mut db_left_a, mut db_right_a) in arb_db_pairs(N_BYTES), 
+			(db_left_b, mut db_right_b) in arb_db_pairs(N_BYTES),
+			(db_left_c, db_right_c) in arb_db_pairs(N_BYTES)
 		) {
-			let (mut db_left_a, mut db_left_b, mut db_left_c) = 
-				(DB::new(), DB::new(), DB::new());
-
-			let (mut db_right_a, mut db_right_b, mut db_right_c) = 
-				(DB::new(), DB::new(), DB::new());
-
-			for b in a_bytes {
-				db_left_a.add(b);
-				db_right_a.add(b);
-			}
-
-			for b in b_bytes {
-				db_left_b.add(b);
-				db_right_b.add(b);
-			}
-
-			for b in c_bytes {
-				db_left_c.add(b);
-				db_right_c.add(b);
-			}
-
 			db_left_a.merge(&db_left_b);
 			db_left_a.merge(&db_left_c);
 
