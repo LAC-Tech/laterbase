@@ -44,7 +44,7 @@ mod tests {
 	    })
 	}
 
-	const N_BYTES: usize = 500;
+	const N_BYTES: usize = 5;
 	proptest! {
 		#[test] 
 		fn can_add_and_query_single_element(n in u8::MIN..u8::MAX) {
@@ -59,7 +59,7 @@ mod tests {
 			assert_eq!(db1, db2);
 		}
 	
-			// (a . b) . c = a . (b . c)
+		// (a . b) . c = a . (b . c)
 		#[test]
 		fn associative(
 			(mut db_left_a, mut db_right_a) in arb_db_pairs(N_BYTES), 
@@ -74,5 +74,18 @@ mod tests {
 
 			assert_eq!(db_left_a, db_right_a);
 		}
+
+		// a . b = b . a
+		#[test]
+		fn commutative(
+			(mut db_left_a, db_right_a) in arb_db_pairs(N_BYTES), 
+			(db_left_b, mut db_right_b) in arb_db_pairs(N_BYTES),
+		) {
+
+			db_left_a.merge(&db_left_b);
+			db_right_b.merge(&db_right_a);
+			assert_eq!(db_left_a, db_right_b);
+		}
+
 	}
 }

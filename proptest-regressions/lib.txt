@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc ed307db324a13bef1046d9854a25ed5a583e983613ca532bbf15341e78ed002d # shrinks to n = 0
+cc ae1031a475ab1be7533a19ea5c7f06fa99cb8f284857b994c64b613600d5ec21 # shrinks to (mut db_left_a, db_right_a) = (DB { events: {} }, DB { events: {} }), (db_left_b, mut db_right_b) = (DB { events: {0} }, DB { events: {0} })
