@@ -1,7 +1,7 @@
 
 type ID = ulid::Ulid;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
 struct DB {
 	events: std::collections::BTreeMap<ID, u8>,
@@ -18,6 +18,7 @@ impl DB {
 	fn add(&mut self, data: u8) -> ID {
 		let id = ulid::Ulid::new();
 		self.events.insert(id, data);
+		self.changes.push(id);
 		id
 	}
 
@@ -29,6 +30,16 @@ impl DB {
 		self.events.extend(other.events.clone().into_iter());
 	}
 }
+
+impl PartialEq for DB {
+    fn eq(&self, other: &Self) -> bool {
+    	// Events are the source of truth!
+        self.events == other.events
+    }
+}
+
+// Equality of event streams is reflexive
+impl Eq for DB {}
 
 #[cfg(test)]
 mod tests {
