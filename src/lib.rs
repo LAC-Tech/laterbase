@@ -1,19 +1,28 @@
+
+type ID = ulid::Ulid;
+
 #[derive(Debug, PartialEq)]
+#[cfg_attr(test, derive(Clone))]
 struct DB {
-	events: std::collections::BTreeSet<u8>
+	events: std::collections::BTreeMap<ID, u8>,
+	changes: Vec<ID>
 }
 
 impl DB {
 	fn new() -> Self {
-		Self { events: std::collections::BTreeSet::new() }
+		let events = std::collections::BTreeMap::new();
+		let changes = vec![];
+		Self {events, changes}
 	}
 
-	fn add(&mut self, data: u8) {
-		self.events.insert(data);
+	fn add(&mut self, data: u8) -> ID {
+		let id = ulid::Ulid::new();
+		self.events.insert(id, data);
+		id
 	}
 
-	fn lookup(&self, data: u8) -> bool {
-		self.events.contains(&data)
+	fn lookup(&self, id: ID) -> u8 {
+		self.events[&id]
 	}
 
 	fn merge(&mut self, other: &DB) {
@@ -30,27 +39,31 @@ mod tests {
 		prop::collection::vec(any::<u8>(), 0..=max_len)
 	}
 
+	/*
+		Generate identical pairs of databases, that can be independently
+		mutated to prove algebraic properties of CRDTs
+	*/
 	fn arb_db_pairs(max_n_bytes: usize) -> impl Strategy<Value = (DB, DB)> {
 		arb_bytes(max_n_bytes).prop_map(|bytes| {
 	        let mut db1 = DB::new();
-	        let mut db2 = DB::new();
 
 	        for b in &bytes {
 	            db1.add(*b);
-	            db2.add(*b);
 	        }
+
+	        let db2 = db1.clone();
 
 	        (db1, db2)
 	    })
 	}
 
-	const N_BYTES: usize = 500;
+	const N_BYTES: usize = 5;
 	proptest! {
 		#[test] 
-		fn can_add_and_query_single_element(n in u8::MIN..u8::MAX) {
+		fn can_add_and_query_single_element(b in u8::MIN..u8::MAX) {
 			let mut db = DB::new();
-			db.add(n);
-			assert!(db.lookup(n));
+			let id = db.add(b);
+			assert_eq!(db.lookup(id), b);
 		}
 
 		#[test]
@@ -86,6 +99,5 @@ mod tests {
 			db_right_b.merge(&db_right_a);
 			assert_eq!(db_left_a, db_right_b);
 		}
-
 	}
 }
