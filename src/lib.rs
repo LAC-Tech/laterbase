@@ -4,7 +4,7 @@ type ID = ulid::Ulid;
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
 struct DB {
-	events: std::collections::BTreeMap<ID, u8>,
+	events: std::collections::BTreeMap<ID, Vec<u8>>,
 	changes: Vec<ID>
 }
 
@@ -15,15 +15,15 @@ impl DB {
 		Self {events, changes}
 	}
 
-	fn add(&mut self, data: u8) -> ID {
+	fn add(&mut self, data: Vec<u8>) -> ID {
 		let id = ulid::Ulid::new();
 		self.events.insert(id, data);
 		self.changes.push(id);
 		id
 	}
 
-	fn lookup(&self, id: ID) -> u8 {
-		self.events[&id]
+	fn lookup(&self, id: ID) -> &[u8] {
+		&self.events[&id]
 	}
 
 	fn merge(&mut self, other: &DB) {
@@ -32,9 +32,9 @@ impl DB {
 }
 
 impl PartialEq for DB {
-    fn eq(&self, other: &Self) -> bool {
+	fn eq(&self, other: &Self) -> bool {
     	// Events are the source of truth!
-        self.events == other.events
+        self.events == other.events 
     }
 }
 
@@ -46,39 +46,44 @@ mod tests {
     use super::*;
 	use proptest::prelude::*;
 
-	fn arb_bytes(max_len: usize) -> impl Strategy<Value = Vec<u8>> {
-		prop::collection::vec(any::<u8>(), 0..=max_len)
+	const N_BYTES_MAX: usize = 8;
+	const N_VALS_MAX: usize = 256;
+
+	fn arb_bytes() -> impl Strategy<Value = Vec<u8>> {
+		prop::collection::vec(any::<u8>(), 0..=N_BYTES_MAX)
+	}
+
+	fn arb_byte_vectors() -> impl Strategy<Value = Vec<Vec<u8>>> {
+		prop::collection::vec(arb_bytes(), 0..N_VALS_MAX)
 	}
 
 	/*
 		Generate identical pairs of databases, that can be independently
 		mutated to prove algebraic properties of CRDTs
 	*/
-	fn arb_db_pairs(max_n_bytes: usize) -> impl Strategy<Value = (DB, DB)> {
-		arb_bytes(max_n_bytes).prop_map(|bytes| {
-	        let mut db1 = DB::new();
+	fn arb_db_pairs() -> impl Strategy<Value = (DB, DB)> {
+		arb_byte_vectors().prop_map(|byte_vectors| {
+			let mut db1 = DB::new();
 
-	        for b in &bytes {
-	            db1.add(*b);
-	        }
+			for byte_vec in byte_vectors {
+		        db1.add(byte_vec);
+		    }
 
-	        let db2 = db1.clone();
-
-	        (db1, db2)
-	    })
+		    let db2 = db1.clone();
+		    (db1, db2)
+		})
 	}
 
-	const N_BYTES: usize = 5;
 	proptest! {
 		#[test] 
-		fn can_add_and_query_single_element(b in u8::MIN..u8::MAX) {
+		fn can_add_and_query_single_element(val in arb_bytes()) {
 			let mut db = DB::new();
-			let id = db.add(b);
-			assert_eq!(db.lookup(id), b);
+			let id = db.add(val.clone());
+			assert_eq!(db.lookup(id), &val);
 		}
 
 		#[test]
-		fn idempotent((mut db1, db2) in arb_db_pairs(N_BYTES)) {
+		fn idempotent((mut db1, db2) in arb_db_pairs()) {
 			db1.merge(&db2);
 			assert_eq!(db1, db2);
 		}
@@ -86,13 +91,13 @@ mod tests {
 		// (a . b) . c = a . (b . c)
 		#[test]
 		fn associative(
-			(mut db_left_a, mut db_right_a) in arb_db_pairs(N_BYTES), 
-			(db_left_b, mut db_right_b) in arb_db_pairs(N_BYTES),
-			(db_left_c, db_right_c) in arb_db_pairs(N_BYTES)
+			(mut db_left_a, mut db_right_a) in arb_db_pairs(), 
+			(db_left_b, mut db_right_b) in arb_db_pairs(),
+			(db_left_c, db_right_c) in arb_db_pairs()
 		) {
 			db_left_a.merge(&db_left_b);
 			db_left_a.merge(&db_left_c);
-
+			
 			db_right_b.merge(&db_right_c);
 			db_right_a.merge(&db_right_b);
 
@@ -102,10 +107,9 @@ mod tests {
 		// a . b = b . a
 		#[test]
 		fn commutative(
-			(mut db_left_a, db_right_a) in arb_db_pairs(N_BYTES), 
-			(db_left_b, mut db_right_b) in arb_db_pairs(N_BYTES),
+			(mut db_left_a, db_right_a) in arb_db_pairs(), 
+			(db_left_b, mut db_right_b) in arb_db_pairs(),
 		) {
-
 			db_left_a.merge(&db_left_b);
 			db_right_b.merge(&db_right_a);
 			assert_eq!(db_left_a, db_right_b);
