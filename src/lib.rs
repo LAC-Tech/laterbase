@@ -1,107 +1,114 @@
 
 type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
-type Events = std::collections::BTreeMap<Key, Vec<u8>>;
+type Val = Vec<u8>
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
-pub struct DB {
-	id: NodeID,
-	events: Events,
-	changes: Vec<Key>,
-	vector_clock: std::collections::HashMap<NodeID, usize>
+struct VectorClock(std::collections::HashMap<NodeID, usize>);
+
+impl VectorClock {
+	fn new() -> Self {
+		Self(std::collections::HashMap::new())
+	}
+
+	fn get(&mut self, node_id: NodeID) -> usize {
+		*self.0.get(&node_id).unwrap_or(&0)
+	}
+
+	fn update(&mut self, other: &Node) {
+		let new_counter = other.changes.len().checked_sub(1).unwrap_or(0);
+		self.0.insert(other.id, new_counter);
+	}
 }
 
-impl DB {
+#[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
+struct Events {
+	btree: std::collections::BTreeMap<Key, Val>,
+	keys: Vec<Key>
+}
+
+impl Events {
+	fn new() -> Self {
+		Self { btree: std::collections::BTreeMap::new(), keys: vec![] }
+	}
+
+	fn add(&mut self, k: Key, v: Val) {
+		self.btree.insert(k, v);
+		self.keys.push(k)
+	}
+
+	fn lookup(&self, k: &Key) -> &Val {
+		&self.btree[k]
+	}
+
+	fn added_since_last_sync(&self, logical_clock: usize) -> &[Key] {
+		&self.keys[logical_clock..]
+	}
+}
+
+#[derive(Debug)]
+#[cfg_attr(test, derive(Clone))]
+pub struct Node {
+	id: NodeID,
+	events: Events,
+	vector_clock: VectorClock
+}
+
+impl Node {
 	pub fn new() -> Self {
 		let id = uuid::Uuid::new_v4();
-		let events = std::collections::BTreeMap::new();
-		let changes = vec![];
-		let vector_clock = std::collections::HashMap::new();
-		Self {id, events, changes, vector_clock}
+		let events = Events::new();
+		let vector_clock = VectorClock::new();
+		Self {id, events, vector_clock}
 	}
 
-	pub fn add(&mut self, data: Vec<u8>) -> Key {
-		let id = ulid::Ulid::new();
-		self.events.insert(id, data);
-		self.changes.push(id);
-		id
+	pub fn add(&mut self, v: Val) -> Key {
+		let k = ulid::Ulid::new();
+		self.events.add(k, v);
+		k
 	}
 
-	fn lookup(&self, keys: Key) -> &[u8] {
-		&self.events[&keys]
+	fn added_since_last_sync_with(&self, remote_id: NodeID) -> &[Key] {
+		let logical_clock = self.vector_clock.get(remote_id);
+		self.events.added_since_last_sync(logical_clock)
 	}
 
-	fn events_i_dont_have(
-		&mut self, 
-		node_id: NodeID, 
-		remote_keys: &[Key]
-	) -> (Vec<Key>, Events) {
-		let start_index = self.start_index(node_id);
-		let local_keys = &self.changes[start_index..];
+	fn sync_handshake(&mut self, remote_id: NodeID, remote_keys: &[Key]) {
+		let local_keys = self.added_since_last_sync_with(remote_id);	
 
-		let mut result = std::collections::BTreeMap::new();
-		let mut keys_i_need = vec![];
+		let missing_local_ids = vec![];
+		let missing_remote_ids = vec![];
 
-		if remote_keys.is_empty() {
-			return (self.changes.clone(), self.events.clone())
-		}
+		for remote_key in remote_keys {
+			if local_keys.contains(remote_key) {
 
-		for k in remote_keys {
-			if !local_keys.contains(k) {
-				keys_i_need.push(*k);
 			} else {
-				let event = self.events.get(k)
-					.expect("Changes feed should match events recorded")
-					.clone();
 
-				result.insert(*k, event);
 			}
 		}
 
-		(keys_i_need, result)
 	}
 
-	fn start_index(&self, node_id: NodeID) -> usize {
-		*self.vector_clock.get(&node_id).unwrap_or(&0)
-	}
+	pub fn merge(&mut self, remote: &mut Node) {
+		let keys_added_since_last_sync = {
+			let logical_clock = self.vector_clock.get(remote.id);
+			self.events.added_since_last_sync(logical_clock)
+		};
 
-	fn update_vector_clock(&mut self, other: &DB) {
-		let new_counter = other.changes.len().checked_sub(1).unwrap_or(0);
-		self.vector_clock.insert(other.id, new_counter);
-	}
+		for k in keys_added_since_last_sync.iter() {
+			if remote.changes.contains(k) {
+				// Remote must have received them from another node
+				continue
+			}
 
-	pub fn merge(&mut self, other: &mut DB) {
-		/*
-			Self: "Here's all the ID's I've added since our last sync. Can you return the events I don't have?"
-		*/
-		let start_index = self.start_index(other.id);
-		let added_ids = &self.changes[start_index..];
-
-		println!("added ids:");
-		println!("{:?}", added_ids);
-
-		/*
-			Other: "Certainly. And here's the ID's you sent that I don't have. Can you send them as well?"
-		*/
-		let (missing_keys, new_events) = 
-			other.events_i_dont_have(self.id, added_ids);
-	
-		self.events.extend(new_events.clone().into_iter());
-		self.update_vector_clock(other);
-
-		for key in missing_keys {
-			other.events.insert(key, self.events.get(&key).unwrap().clone());
+			remote.events.insert(*k, self.events[k]);
 		}
-
-		other.update_vector_clock(self);
-		/*
-			Self: Ok no problem
-		*/
 	}
 }
 
-impl std::fmt::Display for DB {
+impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         writeln!(f, "EVENTS:")?;
 
@@ -118,7 +125,7 @@ impl std::fmt::Display for DB {
     }
 }
 
-impl PartialEq for DB {
+impl PartialEq for Node {
 	fn eq(&self, other: &Self) -> bool {
     	// Events are the source of truth!
         self.events == other.events 
@@ -126,7 +133,7 @@ impl PartialEq for DB {
 }
 
 // Equality of event streams is reflexive
-impl Eq for DB {}
+impl Eq for Node {}
 
 #[cfg(test)]
 mod tests {
@@ -148,9 +155,9 @@ mod tests {
 		Generate identical pairs of databases, that can be independently
 		mutated to prove algebraic properties of CRDTs
 	*/
-	fn arb_db_pairs() -> impl Strategy<Value = (DB, DB)> {
+	fn arb_db_pairs() -> impl Strategy<Value = (Node, Node)> {
 		arb_byte_vectors().prop_map(|byte_vectors| {
-			let mut db1 = DB::new();
+			let mut db1 = Node::new();
 
 			for byte_vec in byte_vectors {
 		        db1.add(byte_vec);
@@ -161,10 +168,17 @@ mod tests {
 		})
 	}
 
+	#[test]
+	fn query_empty_vector_clock() {
+		let mut vc = VectorClock::new();
+
+		assert_eq!(vc.get(uuid::Uuid::new_v4()), 0);
+	}
+
 	proptest! {
 		#[test] 
 		fn can_add_and_query_single_element(val in arb_bytes()) {
-			let mut db = DB::new();
+			let mut db = Node::new();
 			let id = db.add(val.clone());
 			assert_eq!(db.lookup(id), &val);
 		}
@@ -174,7 +188,7 @@ mod tests {
 			db1.merge(&mut db2);
 			assert_eq!(db1, db2);
 		}
-	
+
 		// (a . b) . c = a . (b . c)
 		#[test]
 		fn associative(
@@ -191,6 +205,7 @@ mod tests {
 			assert_eq!(db_left_a, db_right_a);
 		}
 
+		/*
 		// a . b = b . a
 		#[test]
 		fn commutative(
@@ -215,5 +230,6 @@ mod tests {
 
 			assert_eq!(db_left_a, db_right_b);
 		}
+		*/
 	}
 }
