@@ -6,11 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-#axum = "0.6.12"
-#hyper = { version = "0.14.25", features = ["full"] }
-#tokio = { version = "1.27.0", features = ["full"] }
-#tower = "0.4.13"
-#rand = "0.8.5"
+uuid = { version = "1.4.0", features = ["v4"] }
 ulid = "1.0.0"
 
 [dev-dependencies]
