@@ -2,6 +2,7 @@
 type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
 type Val = Vec<u8>;
+type Events = std::collections::BTreeMap<Key, Val>;
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
@@ -22,13 +23,13 @@ impl VectorClock {
 }
 
 struct SyncResponse {
-	sending: std::collections::BTreeMap<Key, Val>,
+	sending: Events,
 	requesting: Vec<Key>
 }
 
 impl SyncResponse {
 	fn new() -> Self {
-		Self { sending: std::collections::BTreeMap::new(), requesting: vec![] }
+		Self { sending: Events::new(), requesting: vec![] }
 	}
 }
 
@@ -44,7 +45,7 @@ pub struct Node {
 impl Node {
 	pub fn new() -> Self {
 		let id = uuid::Uuid::new_v4();
-		let events = std::collections::BTreeMap::new();
+		let events = Events::new();
 		let changes = vec![];
 		let vector_clock = VectorClock::new();
 		Self {id, events, changes, vector_clock}
@@ -68,7 +69,7 @@ impl Node {
 	) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
-		let logical_clock = self.changes.len().checked_sub(1).unwrap_or(0);
+		let logical_clock = self.changes.len().saturating_sub(1);
 		self.vector_clock.update(remote_id, logical_clock);
 	}
 
@@ -82,29 +83,28 @@ impl Node {
 		remote_id: NodeID, 
 		remote_keys: &[Key]
 	) -> SyncResponse {
-
-		let mut res = SyncResponse::new();
 		let local_keys = self.added_since_last_sync_with(remote_id);
 
-		for local_key in local_keys {
-			if remote_keys.contains(local_key) {
-				// Local node has received the event from another remote node
-				continue;
-			} else {
-				let val = self.events.get(local_key).unwrap();
-				res.sending.insert(*local_key, val.clone());	
-			}
-		}
+		let sending: Events = local_keys.iter().flat_map(|local_key| {
+			if remote_keys.contains(local_key) { return None }
 
-		for remote_key in remote_keys {
+			let val = self.events
+				.get(local_key)
+				.expect("database to be consistent");
+
+			Some((*local_key, val.clone()))
+
+		}).collect();
+
+		let requesting: Vec<Key> = remote_keys.iter().flat_map(|remote_key| {
 			if local_keys.contains(remote_key) {
-				continue
-			} else {
-				res.requesting.push(*remote_key);
+				return None
 			}
-		}
 
-		res
+			Some(*remote_key)
+		}).collect();
+
+		SyncResponse { sending, requesting }
 	}
 
 	pub fn merge(&mut self, remote: &mut Node) {
@@ -145,7 +145,7 @@ mod tests {
 	}
 
 	fn arb_byte_vectors() -> impl Strategy<Value = Vec<Vec<u8>>> {
-		prop::collection::vec(arb_bytes(), 0..N_VALS_MAX)
+		prop::collection::vec(arb_bytes(), 0..=N_VALS_MAX)
 	}
 
 	/*
@@ -154,14 +154,14 @@ mod tests {
 	*/
 	fn arb_db_pairs() -> impl Strategy<Value = (Node, Node)> {
 		arb_byte_vectors().prop_map(|byte_vectors| {
-			let mut db1 = Node::new();
+			let mut node1 = Node::new();
 
 			for byte_vec in byte_vectors {
-		        db1.add_local(byte_vec);
+		        node1.add_local(byte_vec);
 		    }
 
-		    let db2 = db1.clone();
-		    (db1, db2)
+		    let node2 = node1.clone();
+		    (node1, node2)
 		})
 	}
 
@@ -174,9 +174,9 @@ mod tests {
 	proptest! {
 		#[test] 
 		fn can_add_and_query_single_element(val in arb_bytes()) {
-			let mut db = Node::new();
-			let id = db.add_local(val.clone());
-			assert_eq!(db.get(&id), Some(&val));
+			let mut node = Node::new();
+			let key = node.add_local(val.clone());
+			assert_eq!(node.get(&key), Some(&val));
 		}
 
 		#[test]
