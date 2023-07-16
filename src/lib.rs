@@ -1,7 +1,7 @@
 
 type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
-type Val = Vec<u8>
+type Val = Vec<u8>;
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
@@ -12,39 +12,23 @@ impl VectorClock {
 		Self(std::collections::HashMap::new())
 	}
 
-	fn get(&mut self, node_id: NodeID) -> usize {
+	fn get(&self, node_id: NodeID) -> usize {
 		*self.0.get(&node_id).unwrap_or(&0)
 	}
 
-	fn update(&mut self, other: &Node) {
-		let new_counter = other.changes.len().checked_sub(1).unwrap_or(0);
-		self.0.insert(other.id, new_counter);
+	fn update(&mut self, remote_id: NodeID, local_clock: usize) {
+		self.0.insert(remote_id, local_clock);
 	}
 }
 
-#[derive(Debug)]
-#[cfg_attr(test, derive(Clone))]
-struct Events {
-	btree: std::collections::BTreeMap<Key, Val>,
-	keys: Vec<Key>
+struct SyncResponse {
+	sending: std::collections::BTreeMap<Key, Val>,
+	requesting: Vec<Key>
 }
 
-impl Events {
+impl SyncResponse {
 	fn new() -> Self {
-		Self { btree: std::collections::BTreeMap::new(), keys: vec![] }
-	}
-
-	fn add(&mut self, k: Key, v: Val) {
-		self.btree.insert(k, v);
-		self.keys.push(k)
-	}
-
-	fn lookup(&self, k: &Key) -> &Val {
-		&self.btree[k]
-	}
-
-	fn added_since_last_sync(&self, logical_clock: usize) -> &[Key] {
-		&self.keys[logical_clock..]
+		Self { sending: std::collections::BTreeMap::new(), requesting: vec![] }
 	}
 }
 
@@ -52,62 +36,92 @@ impl Events {
 #[cfg_attr(test, derive(Clone))]
 pub struct Node {
 	id: NodeID,
-	events: Events,
+	events: std::collections::BTreeMap<Key, Val>,
+	changes: Vec<Key>,
 	vector_clock: VectorClock
 }
 
 impl Node {
 	pub fn new() -> Self {
 		let id = uuid::Uuid::new_v4();
-		let events = Events::new();
+		let events = std::collections::BTreeMap::new();
+		let changes = vec![];
 		let vector_clock = VectorClock::new();
-		Self {id, events, vector_clock}
+		Self {id, events, changes, vector_clock}
 	}
 
-	pub fn add(&mut self, v: Val) -> Key {
+	pub fn add_local(&mut self, v: Val) -> Key {
 		let k = ulid::Ulid::new();
-		self.events.add(k, v);
+		self.events.insert(k, v);
+		self.changes.push(k);
 		k
+	}
+
+	pub fn get(&self, k: &Key) -> Option<&Val> {
+		self.events.get(k)
+	}
+
+	pub fn add_remote(
+		&mut self, 
+		remote_id: NodeID,
+		remote_events: std::collections::BTreeMap<Key, Val>
+	) {
+		self.events.extend(remote_events);
+		let logical_clock = self.changes.len().checked_sub(1).unwrap_or(0);
+		self.vector_clock.update(remote_id, logical_clock);
 	}
 
 	fn added_since_last_sync_with(&self, remote_id: NodeID) -> &[Key] {
 		let logical_clock = self.vector_clock.get(remote_id);
-		self.events.added_since_last_sync(logical_clock)
+		&self.changes[logical_clock..]
 	}
 
-	fn sync_handshake(&mut self, remote_id: NodeID, remote_keys: &[Key]) {
-		let local_keys = self.added_since_last_sync_with(remote_id);	
+	fn sync_handshake(
+		&mut self, 
+		remote_id: NodeID, 
+		remote_keys: &[Key]
+	) -> SyncResponse {
 
-		let missing_local_ids = vec![];
-		let missing_remote_ids = vec![];
+		let mut res = SyncResponse::new();
+		let local_keys = self.added_since_last_sync_with(remote_id);
+
+		for local_key in local_keys {
+			if remote_keys.contains(local_key) {
+				// Local node has received the event from another remote node
+				continue;
+			} else {
+				let val = self.events.get(local_key).unwrap();
+				res.sending.insert(*local_key, val.clone());	
+			}
+		}
 
 		for remote_key in remote_keys {
 			if local_keys.contains(remote_key) {
-
+				continue
 			} else {
-
+				res.requesting.push(*remote_key);
 			}
 		}
 
+		res
 	}
 
 	pub fn merge(&mut self, remote: &mut Node) {
-		let keys_added_since_last_sync = {
-			let logical_clock = self.vector_clock.get(remote.id);
-			self.events.added_since_last_sync(logical_clock)
-		};
+		let local_keys = self.added_since_last_sync_with(remote.id);
 
-		for k in keys_added_since_last_sync.iter() {
-			if remote.changes.contains(k) {
-				// Remote must have received them from another node
-				continue
-			}
+		let res = remote.sync_handshake(self.id, local_keys);
+		self.add_remote(remote.id, res.sending);
 
-			remote.events.insert(*k, self.events[k]);
-		}
+		let new_events_for_remote = res.requesting.into_iter().map(|k| {
+			let v = self.events.get(&k).expect("database to be consistent").clone();
+			(k, v)
+		});
+
+		remote.add_remote(self.id, new_events_for_remote.into_iter().collect());
 	}
 }
 
+/*
 impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         writeln!(f, "EVENTS:")?;
@@ -124,6 +138,7 @@ impl std::fmt::Display for Node {
         Ok(())
     }
 }
+*/
 
 impl PartialEq for Node {
 	fn eq(&self, other: &Self) -> bool {
@@ -160,7 +175,7 @@ mod tests {
 			let mut db1 = Node::new();
 
 			for byte_vec in byte_vectors {
-		        db1.add(byte_vec);
+		        db1.add_local(byte_vec);
 		    }
 
 		    let db2 = db1.clone();
@@ -170,7 +185,7 @@ mod tests {
 
 	#[test]
 	fn query_empty_vector_clock() {
-		let mut vc = VectorClock::new();
+		let vc = VectorClock::new();
 
 		assert_eq!(vc.get(uuid::Uuid::new_v4()), 0);
 	}
@@ -179,8 +194,8 @@ mod tests {
 		#[test] 
 		fn can_add_and_query_single_element(val in arb_bytes()) {
 			let mut db = Node::new();
-			let id = db.add(val.clone());
-			assert_eq!(db.lookup(id), &val);
+			let id = db.add_local(val.clone());
+			assert_eq!(db.get(&id), Some(&val));
 		}
 
 		#[test]
