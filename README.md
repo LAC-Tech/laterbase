@@ -149,6 +149,7 @@ Custom
 - ~~G-Set in rust (copy JS version, but make it mutable)~~
 - ~~Delta state version. Make sure it passes tests~~
 - ~~Sorted version using sequential IDs~~
+- rykv 
 - Test backdating
 - Basic aggregates
 - Aggregate snapshot on read
