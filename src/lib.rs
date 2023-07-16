@@ -66,6 +66,7 @@ impl Node {
 		remote_id: NodeID,
 		remote_events: std::collections::BTreeMap<Key, Val>
 	) {
+		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
 		let logical_clock = self.changes.len().checked_sub(1).unwrap_or(0);
 		self.vector_clock.update(remote_id, logical_clock);
@@ -121,25 +122,6 @@ impl Node {
 	}
 }
 
-/*
-impl std::fmt::Display for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        writeln!(f, "EVENTS:")?;
-
-        for (k, v) in self.events.iter() {
-        	writeln!(f, "{} -> {:?}", k, v)?;
-        }
-
-        writeln!(f, "CHANGES:")?;
-        for c in self.changes.iter() {
-        	writeln!(f, "{}", c)?;
-        }
-
-        Ok(())
-    }
-}
-*/
-
 impl PartialEq for Node {
 	fn eq(&self, other: &Self) -> bool {
     	// Events are the source of truth!
@@ -155,7 +137,7 @@ mod tests {
     use super::*;
 	use proptest::prelude::*;
 
-	const N_BYTES_MAX: usize = 8;
+	const N_BYTES_MAX: usize = 256;
 	const N_VALS_MAX: usize = 2;
 
 	fn arb_bytes() -> impl Strategy<Value = Vec<u8>> {
@@ -186,7 +168,6 @@ mod tests {
 	#[test]
 	fn query_empty_vector_clock() {
 		let vc = VectorClock::new();
-
 		assert_eq!(vc.get(uuid::Uuid::new_v4()), 0);
 	}
 
@@ -220,31 +201,16 @@ mod tests {
 			assert_eq!(db_left_a, db_right_a);
 		}
 
-		/*
 		// a . b = b . a
 		#[test]
 		fn commutative(
 			(mut db_left_a, mut db_right_a) in arb_db_pairs(), 
 			(mut db_left_b, mut db_right_b) in arb_db_pairs(),
 		) {
-			// println!("--------");
-			// println!("a . b");
-			// println!("--------");
-			// println!("{}", &db_left_a); 
-			// println!("{}", &db_left_b);
 			db_left_a.merge(&mut db_left_b);
-			// println!("{}", &db_left_a);
-
-			// println!("--------");
-			// println!("b . a");
-			// println!("--------");
-			// println!("{}", &db_right_b); 
-			// println!("{}", &db_right_a);
 			db_right_b.merge(&mut db_right_a);
-			// println!("{}", &db_right_b);
 
 			assert_eq!(db_left_a, db_right_b);
 		}
-		*/
 	}
 }
