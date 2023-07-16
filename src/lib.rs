@@ -1,8 +1,7 @@
-
 type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
-type Val = Vec<u8>;
-type Events = std::collections::BTreeMap<Key, Val>;
+type Val<'a> = &'a [u8];
+type Events = std::collections::BTreeMap<Key, Vec<u8>>;
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
@@ -27,17 +26,11 @@ struct SyncResponse {
 	requesting: Vec<Key>
 }
 
-impl SyncResponse {
-	fn new() -> Self {
-		Self { sending: Events::new(), requesting: vec![] }
-	}
-}
-
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
 pub struct Node {
 	id: NodeID,
-	events: std::collections::BTreeMap<Key, Val>,
+	events: Events,
 	changes: Vec<Key>,
 	vector_clock: VectorClock
 }
@@ -53,20 +46,16 @@ impl Node {
 
 	pub fn add_local(&mut self, v: Val) -> Key {
 		let k = ulid::Ulid::new();
-		self.events.insert(k, v);
+		self.events.insert(k, v.into());
 		self.changes.push(k);
 		k
 	}
 
-	pub fn get(&self, k: &Key) -> Option<&Val> {
-		self.events.get(k)
+	pub fn get(&self, k: &Key) -> Option<Val> {
+		self.events.get(k).map(|v| v.as_slice())
 	}
 
-	pub fn add_remote(
-		&mut self, 
-		remote_id: NodeID,
-		remote_events: std::collections::BTreeMap<Key, Val>
-	) {
+	pub fn add_remote(&mut self, remote_id: NodeID, remote_events: Events) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
 		let logical_clock = self.changes.len().saturating_sub(1);
@@ -137,7 +126,7 @@ mod tests {
     use super::*;
 	use proptest::prelude::*;
 
-	const N_BYTES_MAX: usize = 256;
+	const N_BYTES_MAX: usize = 512;
 	const N_VALS_MAX: usize = 2;
 
 	fn arb_bytes() -> impl Strategy<Value = Vec<u8>> {
@@ -157,7 +146,7 @@ mod tests {
 			let mut node1 = Node::new();
 
 			for byte_vec in byte_vectors {
-		        node1.add_local(byte_vec);
+		        node1.add_local(byte_vec.as_slice());
 		    }
 
 		    let node2 = node1.clone();
@@ -175,8 +164,8 @@ mod tests {
 		#[test] 
 		fn can_add_and_query_single_element(val in arb_bytes()) {
 			let mut node = Node::new();
-			let key = node.add_local(val.clone());
-			assert_eq!(node.get(&key), Some(&val));
+			let key = node.add_local(val.as_slice());
+			assert_eq!(node.get(&key), Some(val.as_slice()));
 		}
 
 		#[test]
