@@ -1,7 +1,7 @@
 type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
 type Val<'a> = &'a [u8];
-type Events = std::collections::BTreeMap<Key, Vec<u8>>;
+type Events = std::collections::BTreeMap<Key, rkyv::util::AlignedVec>;
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
@@ -44,9 +44,9 @@ impl Node {
 		Self {id, events, changes, vector_clock}
 	}
 
-	pub fn add_local(&mut self, v: Val) -> Key {
+	pub fn add_local(&mut self, v: rkyv::util::AlignedVec) -> Key {
 		let k = ulid::Ulid::new();
-		self.events.insert(k, v.into());
+		self.events.insert(k, v);
 		self.changes.push(k);
 		k
 	}
@@ -127,7 +127,7 @@ mod tests {
 	use proptest::prelude::*;
 
 	const N_BYTES_MAX: usize = 512;
-	const N_VALS_MAX: usize = 2;
+	const N_VALS_MAX: usize = 8;
 
 	fn arb_bytes() -> impl Strategy<Value = Vec<u8>> {
 		prop::collection::vec(any::<u8>(), 0..=N_BYTES_MAX)
@@ -146,7 +146,9 @@ mod tests {
 			let mut node1 = Node::new();
 
 			for byte_vec in byte_vectors {
-		        node1.add_local(byte_vec.as_slice());
+				let v = rkyv::to_bytes::<_, N_VALS_MAX>(&byte_vec)
+					.expect("failed to serialize vec");
+		        node1.add_local(v);
 		    }
 
 		    let node2 = node1.clone();
