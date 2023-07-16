@@ -74,24 +74,23 @@ impl Node {
 	) -> SyncResponse {
 		let local_keys = self.added_since_last_sync_with(remote_id);
 
-		let sending: Events = local_keys.iter().flat_map(|local_key| {
-			if remote_keys.contains(local_key) { return None }
+		let sending: Events = local_keys
+			.iter()
+			.filter(|local_key| !remote_keys.contains(local_key))
+			.map(|local_key| {
+				let val = self.events
+					.get(local_key)
+					.expect("database to be consistent");
 
-			let val = self.events
-				.get(local_key)
-				.expect("database to be consistent");
+				(*local_key, val.clone())
+			})
+			.collect();
 
-			Some((*local_key, val.clone()))
-
-		}).collect();
-
-		let requesting: Vec<Key> = remote_keys.iter().flat_map(|remote_key| {
-			if local_keys.contains(remote_key) {
-				return None
-			}
-
-			Some(*remote_key)
-		}).collect();
+		let requesting: Vec<Key> = remote_keys
+			.iter()
+			.filter(|remote_key| !local_keys.contains(remote_key))
+			.copied()
+			.collect();
 
 		SyncResponse { sending, requesting }
 	}
