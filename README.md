@@ -40,8 +40,9 @@ erDiagram
 
 Each key needs to be both unique, and sortable.
 
-8 byte hybrid logical clock timestamp
-8 bytes random padding
+Using ULIDs. Considered hybrid logical clocks but I don't need to capture any causality at this level.
+
+Also considered UUIDv7s but the rust package situation was slightly more flakey. Should probably revisit this decision on the actual merits.
 
 ### Event Value format
 
@@ -146,8 +147,8 @@ Custom
 ## Roadmap
 
 - ~~G-Set in rust (copy JS version, but make it mutable)~~
-- Delta state version. Make sure it passes tests.
-- Sorted version using hybrid logical clocks
+- ~~Delta state version. Make sure it passes tests~~
+- ~~Sorted version using sequential IDs~~
 - Test backdating
 - Basic aggregates
 - Aggregate snapshot on read
