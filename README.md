@@ -96,6 +96,10 @@ Modelling the entire database as a grow only set, using delta states.
 
 Persist them on read. Reads are fast in LMDB, and we might as well insert on demand.
 
+### Why don't you use Kafka?
+
+TODO:
+
 ### Why LMDB?
 
 To clarify, not 100% that LMDB should be the server side backing store. But I like it because...

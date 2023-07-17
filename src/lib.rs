@@ -1,7 +1,6 @@
 type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
-type Val<'a> = &'a [u8];
-type Events = std::collections::BTreeMap<Key, rkyv::util::AlignedVec>;
+type Events = std::collections::BTreeMap<Key, Vec<u8>>;
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
@@ -44,14 +43,14 @@ impl Node {
 		Self {id, events, changes, vector_clock}
 	}
 
-	pub fn add_local(&mut self, v: rkyv::util::AlignedVec) -> Key {
+	pub fn add_local(&mut self, v: &[u8]) -> Key {
 		let k = ulid::Ulid::new();
-		self.events.insert(k, v);
+		self.events.insert(k, v.to_vec());
 		self.changes.push(k);
 		k
 	}
 
-	pub fn get(&self, k: &Key) -> Option<Val> {
+	pub fn get(&self, k: &Key) -> Option<&[u8]> {
 		self.events.get(k).map(|v| v.as_slice())
 	}
 
@@ -74,8 +73,10 @@ impl Node {
 	) -> SyncResponse {
 		let local_keys = self.added_since_last_sync_with(remote_id);
 
-		let sending: Events = local_keys.iter().flat_map(|local_key| {
-			if remote_keys.contains(local_key) { return None }
+		let sending: Events = local_keys.iter().filter_map(|local_key| {
+			if remote_keys.contains(local_key) {
+                return None
+            }
 
 			let val = self.events
 				.get(local_key)
@@ -85,7 +86,7 @@ impl Node {
 
 		}).collect();
 
-		let requesting: Vec<Key> = remote_keys.iter().flat_map(|remote_key| {
+		let requesting: Vec<Key> = remote_keys.iter().filter_map(|remote_key| {
 			if local_keys.contains(remote_key) {
 				return None
 			}
@@ -114,7 +115,7 @@ impl Node {
 impl PartialEq for Node {
 	fn eq(&self, other: &Self) -> bool {
     	// Events are the source of truth!
-        self.events == other.events 
+        self.events == other.events
     }
 }
 
@@ -130,7 +131,7 @@ mod tests {
 	const N_VALS_MAX: usize = 8;
 
 	fn arb_bytes() -> impl Strategy<Value = Vec<u8>> {
-		prop::collection::vec(any::<u8>(), 0..=N_BYTES_MAX)
+        prop::collection::vec(any::<u8>(), 0..=N_BYTES_MAX)
 	}
 
 	fn arb_byte_vectors() -> impl Strategy<Value = Vec<Vec<u8>>> {
@@ -146,9 +147,7 @@ mod tests {
 			let mut node1 = Node::new();
 
 			for byte_vec in byte_vectors {
-				let v = rkyv::to_bytes::<_, N_VALS_MAX>(&byte_vec)
-					.expect("failed to serialize vec");
-		        node1.add_local(v);
+		        node1.add_local(byte_vec.as_slice());
 		    }
 
 		    let node2 = node1.clone();
@@ -167,13 +166,13 @@ mod tests {
 		fn can_add_and_query_single_element(val in arb_bytes()) {
 			let mut node = Node::new();
 			let key = node.add_local(val.as_slice());
-			assert_eq!(node.get(&key), Some(val.as_slice()));
+			assert_eq!(node.get(&key), Some(val.clone().as_slice()))
 		}
 
 		#[test]
-		fn idempotent((mut db1, mut db2) in arb_db_pairs()) {
-			db1.merge(&mut db2);
-			assert_eq!(db1, db2);
+		fn idempotent((mut node1, mut node2) in arb_db_pairs()) {
+			node1.merge(&mut node2);
+			assert_eq!(node1, node2);
 		}
 
 		// (a . b) . c = a . (b . c)

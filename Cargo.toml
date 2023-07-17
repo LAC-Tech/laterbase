@@ -3,10 +3,8 @@ name = "laterbase"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-rkyv = "0.7.42"
+bytemuck = "1.13.1"
 ulid = "1.0.0"
 uuid = { version = "1.4.0", features = ["v4"] }
 
