@@ -136,24 +136,12 @@ To clarify, not 100% that LMDB should be the server side backing store. But I li
 - Nicer API than Actix-web
 - Makes sense to me!
 
-### Record format
-
-#### Event
-
-```
-[type, version, data ...]
-```
-
-#### Aggregate
-
-Custom
-
 ## Roadmap
 
 - ~~G-Set in rust (copy JS version, but make it mutable)~~
 - ~~Delta state version. Make sure it passes tests~~
 - ~~Sorted version using sequential IDs~~
-- rykv 
+- Add pre-compiled views at runtime
 - Test backdating
 - Basic aggregates
 - Aggregate snapshot on read
