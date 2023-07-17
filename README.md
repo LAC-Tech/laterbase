@@ -80,9 +80,7 @@ GET /{db-name}/{view-name}
 
 ### Read model
 
-Maybe it's completely out of scope! Plus CQRS and all that.
-
-Or maybe couchDB style map-reduce views over events. I feel like querying the actual event streams is going to be more useful when dealing with naturally eventful domains.
+CouchDB style map-reduce views over events. 
 
 ## Design specifications
 

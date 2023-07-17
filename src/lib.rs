@@ -25,6 +25,29 @@ struct SyncResponse {
 	requesting: Vec<Key>
 }
 
+struct View<F> 
+where F: Fn(&[u8]) -> Vec<u8> {
+	name: String,
+	btree: std::collections::BTreeMap<Vec<u8>, Vec<u8>>,
+	reducer: F 
+}
+
+impl<F: Fn(&[u8]) -> Vec<u8>> View<F> {
+	fn new(name: String, reducer: F) -> Self {
+		let btree = std::collections::BTreeMap::new();
+		Self { name, btree, reducer }
+	}
+}
+
+mod test {
+	use super::*;
+
+	#[test]
+	fn can_create_view() {
+		let v = View::new("".to_string(), |_| vec![]);
+	}
+}
+
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
 pub struct Node {
