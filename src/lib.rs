@@ -31,7 +31,10 @@ pub struct Node {
 	id: NodeID,
 	events: Events,
 	changes: Vec<Key>,
-	vector_clock: VectorClock
+	vector_clock: VectorClock,
+	views: std::collections::HashMap<
+		String,
+		std::collections::BTreeMap<Vec<u8>, Vec<u8>>>
 }
 
 impl Node {
@@ -40,7 +43,8 @@ impl Node {
 		let events = Events::new();
 		let changes = vec![];
 		let vector_clock = VectorClock::new();
-		Self {id, events, changes, vector_clock}
+		let views = std::collections::HashMap::new();
+		Self {id, events, changes, vector_clock, views}
 	}
 
 	pub fn add_local(&mut self, v: &[u8]) -> Key {
@@ -54,7 +58,7 @@ impl Node {
 		self.events.get(k).map(|v| v.as_slice())
 	}
 
-	pub fn add_remote(&mut self, remote_id: NodeID, remote_events: Events) {
+	fn add_remote(&mut self, remote_id: NodeID, remote_events: Events) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
 		let logical_clock = self.changes.len().saturating_sub(1);
