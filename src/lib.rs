@@ -20,11 +20,6 @@ impl VectorClock {
 	}
 }
 
-struct SyncResponse {
-	sending: Events,
-	requesting: Vec<Key>
-}
-
 #[cfg_attr(test, derive(Clone))]
 pub struct View {
 	btree: std::collections::BTreeMap<Vec<u8>, Vec<u8>>,
@@ -101,49 +96,29 @@ impl Node {
 		&self.changes[logical_clock..]
 	}
 
-	fn sync_handshake(
-		&mut self, 
-		remote_id: NodeID, 
-		remote_keys: &[Key]
-	) -> SyncResponse {
-		let local_keys = self.added_since_last_sync_with(remote_id);
-
-		let sending: Events = local_keys.iter().filter_map(|local_key| {
-			if remote_keys.contains(local_key) {
+	fn unrecorded_events(&self, local_keys: &[Key], remote: &Self, remote_keys: &[Key]) -> Events {
+		remote_keys.iter().filter_map(|remote_key| {
+			if local_keys.contains(remote_key) {
                 return None
             }
-
-			let val = self.events
-				.get(local_key)
+			let val = remote.events
+				.get(remote_key)
 				.expect("database to be consistent");
 
-			Some((*local_key, val.clone()))
-
-		}).collect();
-
-		let requesting: Vec<Key> = remote_keys.iter().filter_map(|remote_key| {
-			if local_keys.contains(remote_key) {
-				return None
-			}
-
-			Some(*remote_key)
-		}).collect();
-
-		SyncResponse { sending, requesting }
+			Some((*remote_key, val.clone()))
+		})
+		.collect()
 	}
 
 	pub fn merge(&mut self, remote: &mut Node) {
-		let local_keys = self.added_since_last_sync_with(remote.id);
+		let local_keys = self.added_since_last_sync_with(remote.id).to_vec();
+		let remote_keys = remote.added_since_last_sync_with(self.id).to_vec();
+		
+		let new_local_events = self.unrecorded_events(&local_keys, remote, &remote_keys);
+		self.add_remote(remote.id, new_local_events);
 
-		let res = remote.sync_handshake(self.id, local_keys);
-		self.add_remote(remote.id, res.sending);
-
-		let new_events_for_remote = res.requesting.into_iter().map(|k| {
-			let v = self.events.get(&k).expect("database to be consistent").clone();
-			(k, v)
-		});
-
-		remote.add_remote(self.id, new_events_for_remote.into_iter().collect());
+		let new_remote_events = self.unrecorded_events(&remote_keys, self, &local_keys);		
+		remote.add_remote(self.id, new_remote_events);
 	}
 }
 
@@ -184,7 +159,7 @@ mod tests {
 			let mut node1 = Node::new(vec![]);
 
 			for byte_vec in byte_vectors {
-				node1.add_local(byte_vec.as_slice());
+				node1.add_local(&byte_vec);
 			}
 
 			let node2 = node1.clone();
@@ -203,7 +178,7 @@ mod tests {
 		#[test] 
 		fn can_add_and_query_single_element(val in arb_bytes()) {
 			let mut node = Node::new(vec![]);
-			let key = node.add_local(val.as_slice());
+			let key = node.add_local(&val);
 			assert_eq!(node.get(&key), Some(val.clone().as_slice()))
 		}
 
