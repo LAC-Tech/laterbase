@@ -4,28 +4,26 @@
 
 ### Overview
 
-A fast, highly available event store. Designed to be the source of truth for event-driven industries like supply chain & logistics.
+A fast distributed event store, designed for high write availability even under network partition. 
 
 ### Target Users
 
 Users in industries where the domain is naturally eventful. (I'm primarily thinking of supply chain & logistics, but I'm sure there's others). Probably smaller outfits where the clumsiness of traditional ERPs is failing them. Logistics is an even more specific target, as they record more info "in the field" where network resiliency matters.
 
-### Business Objectives
+### Business Objectives:
 
-- Improve operational efficiency for supply chain and logistics industries.
-- Ensure data resiliency during network outages through local event recording and syncing.
-- Flexibility - users can define their own formats & schemas, that work with their existing systems. 
-- Performance: purely focused on writing and aggregating event streams, nothing else. 
-- Support multi-platform usage on servers, mobile phones, and web apps. Anything can be a master node.
+- Improve supply chain and logistics operational efficiency.
+- Function during network outages and in the field. 
+- Optimize performance for event stream processing.
+- Support multi-platform usage:
 
-### Key Features
+### Key Features:
 
-- Network outage resilience. Events are recorded locally and synced later when network conditions allow it, with no loss of data.
-- Flexibility: multi-master, CRDT based system means events can be sent in any order, and servers can be on-device, on-premise or on the cloud.
-- Back-dating: events can be written retroactively, allowing the integration of existing and third party data.
-- Extensibility: Provide users with the ability to define their own schemas and aggregation functions to suit their particular needs.
-- Uses high performance tools to ensure efficient processing
-- Concentrates solely on event sourcing and syncing, keeping the system streamlined and purpose-driven.
+- Backdating
+- Multi region deployment without any loss of write availability
+- Retroactive event writing for integration of existing and third-party data.
+- User-defined schemas and aggregation functions.
+- Focus on event sourcing and syncing.
 
 ## Functional Specifications
 
@@ -36,7 +34,9 @@ erDiagram
 	DB ||--o{ VIEW : has
 ```
 
-### Event Key 
+### Data Formats
+
+#### Event Key 
 
 Each key needs to be both unique, and sortable.
 
@@ -44,18 +44,17 @@ Using ULIDs. Considered hybrid logical clocks but I don't need to capture any ca
 
 Also considered UUIDv7s but the rust package situation was slightly more flakey. Should probably revisit this decision on the actual merits.
 
-### Event Value format
+#### Event Value 
 
-4 bytes for the event type, 4 bytes for the event version.
-The rest of the bytes are up to the user. Could be JSON, serialized data, whatever.
+Arbitrary bytes. It's up to the user to make sense of this.
 
-### Aggregate Key
+#### Aggregate Key
 
-User defined
+Arbitrary bytes
 
 ### Aggregate Value
 
-User defined
+Arbitrary bytes
 
 ### HTTP Endpoints
 
@@ -78,9 +77,26 @@ This is not the same as getting all events that have happened since a certain ti
 GET /{db-name}/{view-name}
 ```
 
-### Read model
+### Views
 
-CouchDB style map-reduce views over events. 
+I wish to utilise CouchDB style map-reduce views over events. 
+
+These 'reduce' over an immutable log of events
+
+```mermaid
+graph LR;
+    subgraph Event Stream
+        E1 --> E2 --> E3 --> E4 --> E5
+    end
+
+    subgraph View Process
+        E1 -->|Process| KV1((Key-Value Pair 1))
+        E2 -->|Process| KV2((Key-Value Pair 2))
+        E3 -->|Process| KV3((Key-Value Pair 3))
+        E4 -->|Process| KV4((Key-Value Pair 4))
+        E5 -->|Process| KV5((Key-Value Pair 5))
+    end
+```
 
 ## Design specifications
 
@@ -140,13 +156,15 @@ To clarify, not 100% that LMDB should be the server side backing store. But I li
 - ~~Delta state version. Make sure it passes tests~~
 - ~~Sorted version using sequential IDs~~
 - Add pre-compiled views at runtime
+- "State machine" stye arbiraries that simulate multiple merges
+- Simulate data loss of a node, and syncing again
 - Test backdating
-- Basic aggregates
 - Aggregate snapshot on read
+- Sync views??
+- Persistent storage using LMDB or similar
 - Factor out in-memory storage engine, make a trait
 - HTTP Server
 - More tests with tokio-rs turmoil, or whatever works
-- Persistent storage using LMDB or similar
 - ???
 - Profit
 
