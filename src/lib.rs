@@ -1,6 +1,9 @@
+use std::collections::{BTreeMap};
+
+
 type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
-type Events = std::collections::BTreeMap<Key, Vec<u8>>;
+type Events = BTreeMap<Key, Vec<u8>>;
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
@@ -22,14 +25,18 @@ impl VectorClock {
 
 #[cfg_attr(test, derive(Clone))]
 pub struct View {
-	btree: std::collections::BTreeMap<Vec<u8>, Vec<u8>>,
-	reducer: fn(&[u8], &[u8]) -> Option<Vec<u8>>
+	btree: BTreeMap<Vec<u8>, Vec<u8>>,
+	reducer: fn(&[u8], &[u8]) -> Option<BTreeMap<Vec<u8>, Vec<u8>>>
 }
 
 impl View {
-	fn new(reducer: fn(&[u8], &[u8]) -> Option<Vec<u8>>) -> Self {
+	fn new(reducer: fn(&[u8], &[u8]) -> Option<BTreeMap<Vec<u8>, Vec<u8>>>) -> Self {
 		let btree = std::collections::BTreeMap::new();
 		Self { btree, reducer }
+	}
+
+	fn get(&self, id: &[u8]) -> Option<&[u8]> {
+		self.btree.get(id).map(|bs| bs.as_slice())
 	}
 }
 
@@ -53,7 +60,16 @@ mod test {
 
 	#[test]
 	fn can_add_numbers() {
-		let v = View::new(|_, _| None);
+		
+		let v = View::new(|accum, curr| {
+			let accum = bytemuck::from_bytes::<i32>(&accum);
+			let curr = bytemuck::from_bytes::<i32>(&curr);
+			
+			None
+		});
+
+		let n: i32 = 100;
+
 	}
 }
 
