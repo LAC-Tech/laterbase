@@ -23,13 +23,19 @@ impl VectorClock {
 #[cfg_attr(test, derive(Clone))]
 pub struct View {
 	btree: std::collections::BTreeMap<Vec<u8>, Vec<u8>>,
-	reducer: fn(&[u8]) -> Vec<u8>
+	reducer: fn(&[u8], &[u8]) -> Option<Vec<u8>>
 }
 
 impl View {
-	fn new(reducer: fn(&[u8]) -> Vec<u8>) -> Self {
+	fn new(reducer: fn(&[u8], &[u8]) -> Option<Vec<u8>>) -> Self {
 		let btree = std::collections::BTreeMap::new();
 		Self { btree, reducer }
+	}
+}
+
+impl View {
+	fn process(&mut self, event: &[u8]) {
+		panic!("lol you haven't implemented me yet")
 	}
 }
 
@@ -46,8 +52,8 @@ mod test {
 	use super::*;
 
 	#[test]
-	fn can_create_view() {
-		let v = View::new(|_| vec![]);
+	fn can_add_numbers() {
+		let v = View::new(|_, _| None);
 	}
 }
 
