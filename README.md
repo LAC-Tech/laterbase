@@ -29,14 +29,14 @@ Users in industries where the domain is naturally eventful. (I'm primarily think
 
 ```mermaid
 erDiagram
-	SERVER ||--|{ DB : accesses
-	DB ||--|| EVENT-STREAM : stores
-	DB ||--o{ VIEW : has
+    SERVER ||--|{ DB : accesses
+    DB ||--|| EVENT-STREAM : stores
+    DB ||--o{ VIEW : has
 ```
 
 ### Data Formats
 
-#### Event Key 
+#### Event Key
 
 Each key needs to be both unique, and sortable.
 
@@ -44,7 +44,7 @@ Using ULIDs. Considered hybrid logical clocks but I don't need to capture any ca
 
 Also considered UUIDv7s but the rust package situation was slightly more flakey. Should probably revisit this decision on the actual merits.
 
-#### Event Value 
+#### Event Value
 
 Arbitrary bytes. It's up to the user to make sense of this.
 
@@ -59,11 +59,13 @@ Arbitrary bytes
 ### HTTP Endpoints
 
 #### Write one or more events
+
 ```
 POST /{db-name}/e
 ```
 
 #### Event changes feed
+
 ```
 GET /{db-name}/e?vv={version-vector} 
 ```
@@ -73,6 +75,7 @@ Gets all the events the user *doesn't know about*.
 This is not the same as getting all events that have happened since a certain time, since it's possible to backdate events. They are however returned in order of their hybrid logical clocks.
 
 #### Query View
+
 ```
 GET /{db-name}/{view-name}
 ```
@@ -85,17 +88,13 @@ These 'reduce' over an immutable log of events
 
 ```mermaid
 graph LR;
-    subgraph Event Stream
-        E1 --> E2 --> E3 --> E4 --> E5
-    end
-
-    subgraph View Process
-        E1 -->|Process| KV1((Key-Value Pair 1))
-        E2 -->|Process| KV2((Key-Value Pair 2))
-        E3 -->|Process| KV3((Key-Value Pair 3))
-        E4 -->|Process| KV4((Key-Value Pair 4))
-        E5 -->|Process| KV5((Key-Value Pair 5))
-    end
+    events[e1, e2, e3, ...]
+    view
+    events --> view
+    view --> record1
+    view --> record2
+    view --> record3
+    
 ```
 
 ## Design specifications
