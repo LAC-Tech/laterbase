@@ -23,20 +23,18 @@ impl VectorClock {
 }
 
 type ViewData = BTreeMap<Vec<u8>, Vec<u8>>; 
-type ViewFn = fn(&mut usize, &ViewData, &[u8]) -> ViewData;
+type ViewFn = fn(&ViewData, &[u8]) -> ViewData;
 
 #[cfg_attr(test, derive(Clone))]
 pub struct View {
-	logical_clock: usize,
 	data: ViewData,
 	f: ViewFn
 }
 
 impl View {
 	fn new(f: ViewFn) -> Self {
-		let logical_clock = 0;
 		let data = ViewData::new();
-		Self { logical_clock, data, f }
+		Self { data, f }
 	}
 
 	fn get(&self, id: &[u8]) -> Option<&[u8]> {
@@ -46,7 +44,7 @@ impl View {
 
 impl View {
 	fn process(&mut self, event: &[u8]) {
-		let new_data = (self.f)(&mut self.logical_clock, &self.data, event);
+		let new_data = (self.f)(&self.data, event);
 		self.data.extend(new_data.into_iter());
 	}
 }
@@ -69,6 +67,25 @@ mod test {
 		celcius: f32
 	}
 
+	#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+	struct MeanAccum {
+		count: usize,
+		mean: f32
+	}
+
+	impl MeanAccum {
+		fn add(&self, elem: f32) -> Self {
+			let count = self.count + 1;
+			let mean = (self.mean + elem) / (count as f32);
+
+			Self { count, mean }
+		}
+
+		fn new(first_elem: f32) -> Self {
+			Self { count: 1, mean: first_elem }
+		}
+	}
+
 	#[test]
 	fn can_add_numbers() {
 		let events = [
@@ -82,28 +99,23 @@ mod test {
 			celcius
 		});
 	
-		let mut running_average = View::new(|n_events, accum, event| {
+		let mut running_average = View::new(|accum, event| {
 			let mut result = ViewData::new();
 			let event: TempReading = bincode::deserialize(event).unwrap();
 		
-			dbg!(&event);
-
 			let id = bincode::serialize(&event.location).unwrap();
-			let n = accum.get(&id)
-				.map(|id| id.as_slice())
-				.map(|existing_average| {
-					let existing_average: f32 = 
-						bincode::deserialize(existing_average).unwrap();
+			let mean_accum: MeanAccum = accum.get(&id).map(|existing_average| {
+				let mean_accum: MeanAccum = 
+					bincode::deserialize(existing_average.as_slice()).unwrap();
+			
+				mean_accum.add(event.celcius)
 
-					assert!(*n_events != 0);
-					(existing_average + event.celcius) / (*n_events as f32)
-				})
-				.unwrap_or(event.celcius);
+			})
+			.unwrap_or(MeanAccum::new(event.celcius));
 
-			let val = bincode::serialize(&n).unwrap();
+			let val = bincode::serialize(&mean_accum).unwrap();
 
 			result.insert(id, val);
-			*n_events += 1;
 			result
 		});
 
@@ -113,16 +125,14 @@ mod test {
 		}
 
 		let id: Vec<u8> = bincode::serialize("a").unwrap();
-		let expected: Vec<u8> = bincode::serialize(&(16.5 as f32)).unwrap();
+		let expected: Vec<u8> = bincode::serialize(
+			&MeanAccum{count: 2, mean: 16.5 as f32}).unwrap();
 
-        let expected: Option<f32> = 
+        let expected: Option<MeanAccum> = 
             Some(bincode::deserialize(&expected).unwrap());
 
-		let actual: Option<f32> =
+		let actual: Option<MeanAccum> =
 			running_average.get(&id).map(|bs| bincode::deserialize(&bs).unwrap());
-
-		dbg!(actual);
-		dbg!(expected);
 
 		assert_eq!(actual, expected);
 	}
@@ -183,6 +193,7 @@ impl Node {
 			if local_keys.contains(remote_key) {
                 return None
             }
+
 			let val = remote.events
 				.get(remote_key)
 				.expect("database to be consistent");
