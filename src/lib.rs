@@ -23,7 +23,7 @@ impl VectorClock {
 }
 
 type ViewData = BTreeMap<Vec<u8>, Vec<u8>>; 
-type ViewFn = fn(usize, &ViewData, &[u8]) -> ViewData;
+type ViewFn = fn(&mut usize, &ViewData, &[u8]) -> ViewData;
 
 #[cfg_attr(test, derive(Clone))]
 pub struct View {
@@ -46,7 +46,7 @@ impl View {
 
 impl View {
 	fn process(&mut self, event: &[u8]) {
-		let new_data = (self.f)(self.logical_clock, &self.data, event);
+		let new_data = (self.f)(&mut self.logical_clock, &self.data, event);
 		self.data.extend(new_data.into_iter());
 	}
 }
@@ -63,7 +63,7 @@ impl std::fmt::Debug for View {
 mod test {
 	use super::*;
 
-	#[derive(serde::Serialize, serde::Deserialize)]
+	#[derive(Debug, serde::Serialize, serde::Deserialize)]
 	struct TempReading {
 		location: String,
 		celcius: f32
@@ -85,7 +85,9 @@ mod test {
 		let mut running_average = View::new(|n_events, accum, event| {
 			let mut result = ViewData::new();
 			let event: TempReading = bincode::deserialize(event).unwrap();
-			
+		
+			dbg!(&event);
+
 			let id = bincode::serialize(&event.location).unwrap();
 			let n = accum.get(&id)
 				.map(|id| id.as_slice())
@@ -93,14 +95,15 @@ mod test {
 					let existing_average: f32 = 
 						bincode::deserialize(existing_average).unwrap();
 
-					(existing_average + event.celcius) / (n_events as f32)
+					assert!(*n_events != 0);
+					(existing_average + event.celcius) / (*n_events as f32)
 				})
 				.unwrap_or(event.celcius);
 
 			let val = bincode::serialize(&n).unwrap();
 
 			result.insert(id, val);
-
+			*n_events += 1;
 			result
 		});
 
@@ -109,14 +112,19 @@ mod test {
 			running_average.process(e.as_slice());
 		}
 
-		let id = bincode::serialize("a").unwrap();
-		let expected = bincode::serialize(&(16.5 as f32)).unwrap();
+		let id: Vec<u8> = bincode::serialize("a").unwrap();
+		let expected: Vec<u8> = bincode::serialize(&(16.5 as f32)).unwrap();
 
-		dbg!(&running_average);
+        let expected: Option<f32> = 
+            Some(bincode::deserialize(&expected).unwrap());
 
-		assert_eq!(
-			running_average.get(id.as_slice()), 
-			Some(expected.as_slice()));
+		let actual: Option<f32> =
+			running_average.get(&id).map(|bs| bincode::deserialize(&bs).unwrap());
+
+		dbg!(actual);
+		dbg!(expected);
+
+		assert_eq!(actual, expected);
 	}
 }
 
