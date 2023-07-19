@@ -178,13 +178,12 @@ impl Node {
 		self.vector_clock.update(remote_id, logical_clock);
 	}
 
-	fn added_since_last_sync_with(&self, remote_id: NodeID) -> &[Key] {
+	fn keys_added_since_last_sync(&self, remote_id: NodeID) -> &[Key] {
 		let logical_clock = self.vector_clock.get(remote_id);
 		&self.changes[logical_clock..]
 	}
 
-	fn unrecorded_events(
-		&self,
+	fn missing_events(
 		local_keys: &[Key],
 		remote: &Self,
 		remote_keys: &[Key]
@@ -204,15 +203,13 @@ impl Node {
 	}
 
 	pub fn merge(&mut self, remote: &mut Node) {
-		let local_keys = self.added_since_last_sync_with(remote.id).to_vec();
-		let remote_keys = remote.added_since_last_sync_with(self.id).to_vec();
+		let local_ks = self.keys_added_since_last_sync(remote.id).to_vec();
+		let remote_ks = remote.keys_added_since_last_sync(self.id).to_vec();
 		
-		let new_local_events =
-			self.unrecorded_events(&local_keys, remote, &remote_keys);
+		let new_local_events = Self::missing_events(&local_ks, remote, &remote_ks);
 		self.add_remote(remote.id, new_local_events);
 
-		let new_remote_events = 
-			self.unrecorded_events(&remote_keys, self, &local_keys);		
+		let new_remote_events = Self::missing_events(&remote_ks, self, &local_ks);	
 		remote.add_remote(self.id, new_remote_events);
 	}
 }
