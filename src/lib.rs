@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
@@ -178,39 +178,35 @@ impl Node {
 		self.vector_clock.update(remote_id, logical_clock);
 	}
 
-	fn keys_added_since_last_sync(&self, remote_id: NodeID) -> &[Key] {
+	fn keys_added_since_last_sync(&self, remote_id: NodeID) -> BTreeSet<Key> {
 		let logical_clock = self.vector_clock.get(remote_id);
-		&self.changes[logical_clock..]
+		self.changes[logical_clock..].iter().cloned().collect()
 	}
 
 	fn missing_events(
-		local_keys: &[Key],
-		remote: &Self,
-		remote_keys: &[Key]
+		&self,
+		local_ks: &BTreeSet<Key>,
+		remote_ks: &BTreeSet<Key>
 	) -> Events {
-		remote_keys.iter().filter_map(|remote_key| {
-			if local_keys.contains(remote_key) {
-                return None
-            }
-
-			let val = remote.events
+		local_ks.difference(remote_ks).map(|remote_key| {
+			let val = self.events
 				.get(remote_key)
 				.expect("database to be consistent");
 
-			Some((*remote_key, val.clone()))
+			(*remote_key, val.clone())
 		})
 		.collect()
 	}
 
 	pub fn merge(&mut self, remote: &mut Node) {
-		let local_ks = self.keys_added_since_last_sync(remote.id).to_vec();
-		let remote_ks = remote.keys_added_since_last_sync(self.id).to_vec();
-		
-		let new_local_events = Self::missing_events(&local_ks, remote, &remote_ks);
-		self.add_remote(remote.id, new_local_events);
+		let local_ks = self.keys_added_since_last_sync(remote.id);
+		let remote_ks = remote.keys_added_since_last_sync(self.id);
 
-		let new_remote_events = Self::missing_events(&remote_ks, self, &local_ks);	
-		remote.add_remote(self.id, new_remote_events);
+		let missing_events = remote.missing_events(&remote_ks, &local_ks);
+		self.add_remote(remote.id, missing_events);
+
+		let missing_events = self.missing_events(&local_ks, &remote_ks);	
+		remote.add_remote(self.id, missing_events);
 	}
 }
 
