@@ -4,40 +4,37 @@ type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
 type Events = BTreeMap<Key, Vec<u8>>;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct LogicalClock(usize);
-
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
-struct VectorClock(std::collections::HashMap<NodeID, LogicalClock>);
+struct VectorClock(std::collections::HashMap<NodeID, usize>);
 
 impl VectorClock {
 	fn new() -> Self {
 		Self(std::collections::HashMap::new())
 	}
 
-	fn get(&self, node_id: NodeID) -> LogicalClock {
-		*self.0.get(&node_id).unwrap_or(&LogicalClock(0))
+	fn get(&self, node_id: NodeID) -> usize {
+		*self.0.get(&node_id).unwrap_or(&0)
 	}
 
-	fn update(&mut self, remote_id: NodeID, local_clock: LogicalClock) {
+	fn update(&mut self, remote_id: NodeID, local_clock: usize) {
 		self.0.insert(remote_id, local_clock);
 	}
 }
 
 type ViewData = BTreeMap<Vec<u8>, Vec<u8>>; 
-type ViewFn = fn(LogicalClock, &ViewData, &[u8]) -> ViewData;
+type ViewFn = fn(usize, &ViewData, &[u8]) -> ViewData;
 
 #[cfg_attr(test, derive(Clone))]
 pub struct View {
-	logical_clock: LogicalClock,
+	logical_clock: usize,
 	data: ViewData,
 	f: ViewFn
 }
 
 impl View {
 	fn new(f: ViewFn) -> Self {
-		let logical_clock = LogicalClock(0);
+		let logical_clock = 0;
 		let data = ViewData::new();
 		Self { logical_clock, data, f }
 	}
@@ -95,10 +92,8 @@ mod test {
 				.map(|existing_average| {
 					let existing_average: f32 = 
 						bincode::deserialize(existing_average).unwrap();
-					
-					let n_events = n_events.0 as f32;
 
-					(existing_average + event.celcius) / n_events
+					(existing_average + event.celcius) / (n_events as f32)
 				})
 				.unwrap_or(event.celcius);
 
@@ -161,13 +156,13 @@ impl Node {
 	fn add_remote(&mut self, remote_id: NodeID, remote_events: Events) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
-		let logical_clock = LogicalClock(self.changes.len().saturating_sub(1));
+		let logical_clock = self.changes.len().saturating_sub(1);
 		self.vector_clock.update(remote_id, logical_clock);
 	}
 
 	fn added_since_last_sync_with(&self, remote_id: NodeID) -> &[Key] {
 		let logical_clock = self.vector_clock.get(remote_id);
-		&self.changes[logical_clock.0..]
+		&self.changes[logical_clock..]
 	}
 
 	fn unrecorded_events(
@@ -252,7 +247,7 @@ mod tests {
 	#[test]
 	fn query_empty_vector_clock() {
 		let vc = VectorClock::new();
-		assert_eq!(vc.get(uuid::Uuid::new_v4()), LogicalClock(0));
+		assert_eq!(vc.get(uuid::Uuid::new_v4()), 0);
 	}
 
 	proptest! {
