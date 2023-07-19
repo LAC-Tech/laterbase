@@ -161,10 +161,10 @@ impl Node {
 	}
 
 	pub fn add_local(&mut self, v: &[u8]) -> Key {
-		let k = ulid::Ulid::new();
-		self.events.insert(k, v.to_vec());
-		self.changes.push(k);
-		k
+		let key = ulid::Ulid::new();
+		self.events.insert(key, v.to_vec());
+		self.changes.push(key);
+		key
 	}
 
 	pub fn get(&self, k: &Key) -> Option<&[u8]> {
@@ -219,6 +219,10 @@ impl PartialEq for Node {
 
 // Equality of event streams is reflexive
 impl Eq for Node {}
+
+fn app() -> axum::Router {
+	axum::Router::new()
+}
 
 #[cfg(test)]
 mod tests {
