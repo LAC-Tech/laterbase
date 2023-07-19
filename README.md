@@ -94,7 +94,6 @@ graph LR;
     view --> record1
     view --> record2
     view --> record3
-    
 ```
 
 ## Design specifications

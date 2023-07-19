@@ -1,55 +1,63 @@
 use std::collections::{BTreeMap};
 
-
 type NodeID = uuid::Uuid;
 type Key = ulid::Ulid;
 type Events = BTreeMap<Key, Vec<u8>>;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LogicalClock(usize);
+
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
-struct VectorClock(std::collections::HashMap<NodeID, usize>);
+struct VectorClock(std::collections::HashMap<NodeID, LogicalClock>);
 
 impl VectorClock {
 	fn new() -> Self {
 		Self(std::collections::HashMap::new())
 	}
 
-	fn get(&self, node_id: NodeID) -> usize {
-		*self.0.get(&node_id).unwrap_or(&0)
+	fn get(&self, node_id: NodeID) -> LogicalClock {
+		*self.0.get(&node_id).unwrap_or(&LogicalClock(0))
 	}
 
-	fn update(&mut self, remote_id: NodeID, local_clock: usize) {
+	fn update(&mut self, remote_id: NodeID, local_clock: LogicalClock) {
 		self.0.insert(remote_id, local_clock);
 	}
 }
 
+type ViewData = BTreeMap<Vec<u8>, Vec<u8>>; 
+type ViewFn = fn(LogicalClock, &ViewData, &[u8]) -> ViewData;
+
 #[cfg_attr(test, derive(Clone))]
 pub struct View {
-	btree: BTreeMap<Vec<u8>, Vec<u8>>,
-	reducer: fn(&[u8], &[u8]) -> Option<BTreeMap<Vec<u8>, Vec<u8>>>
+	logical_clock: LogicalClock,
+	data: ViewData,
+	f: ViewFn
 }
 
 impl View {
-	fn new(reducer: fn(&[u8], &[u8]) -> Option<BTreeMap<Vec<u8>, Vec<u8>>>) -> Self {
-		let btree = std::collections::BTreeMap::new();
-		Self { btree, reducer }
+	fn new(f: ViewFn) -> Self {
+		let logical_clock = LogicalClock(0);
+		let data = ViewData::new();
+		Self { logical_clock, data, f }
 	}
 
 	fn get(&self, id: &[u8]) -> Option<&[u8]> {
-		self.btree.get(id).map(|bs| bs.as_slice())
+		self.data.get(id).map(|bs| bs.as_slice())
 	}
 }
 
 impl View {
 	fn process(&mut self, event: &[u8]) {
-		panic!("lol you haven't implemented me yet")
+		let new_data = (self.f)(self.logical_clock, &self.data, event);
+		self.data.extend(new_data.into_iter());
 	}
 }
 
 impl std::fmt::Debug for View {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("View")
-            .field("btree", &self.btree)
+            .field("btree", &self.data)
             .finish()
     }
 }
@@ -58,18 +66,62 @@ impl std::fmt::Debug for View {
 mod test {
 	use super::*;
 
+	#[derive(serde::Serialize, serde::Deserialize)]
+	struct TempReading {
+		location: String,
+		celcius: f32
+	}
+
 	#[test]
 	fn can_add_numbers() {
-		
-		let v = View::new(|accum, curr| {
-			let accum = bytemuck::from_bytes::<i32>(&accum);
-			let curr = bytemuck::from_bytes::<i32>(&curr);
+		let events = [
+			("a", 20.0),
+			("b", 12.0),
+			("c", 34.0),
+			("a", 13.0),
+			("b", -34.0)
+		].map(|(location, celcius)| TempReading { 
+			location: location.to_string(),
+			celcius
+		});
+	
+		let mut running_average = View::new(|n_events, accum, event| {
+			let mut result = ViewData::new();
+			let event: TempReading = bincode::deserialize(event).unwrap();
 			
-			None
+			let id = bincode::serialize(&event.location).unwrap();
+			let n = accum.get(&id)
+				.map(|id| id.as_slice())
+				.map(|existing_average| {
+					let existing_average: f32 = 
+						bincode::deserialize(existing_average).unwrap();
+					
+					let n_events = n_events.0 as f32;
+
+					(existing_average + event.celcius) / n_events
+				})
+				.unwrap_or(event.celcius);
+
+			let val = bincode::serialize(&n).unwrap();
+
+			result.insert(id, val);
+
+			result
 		});
 
-		let n: i32 = 100;
+		for e in events {
+			let e = bincode::serialize(&e).unwrap();
+			running_average.process(e.as_slice());
+		}
 
+		let id = bincode::serialize("a").unwrap();
+		let expected = bincode::serialize(&(16.5 as f32)).unwrap();
+
+		dbg!(&running_average);
+
+		assert_eq!(
+			running_average.get(id.as_slice()), 
+			Some(expected.as_slice()));
 	}
 }
 
@@ -109,16 +161,21 @@ impl Node {
 	fn add_remote(&mut self, remote_id: NodeID, remote_events: Events) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
-		let logical_clock = self.changes.len().saturating_sub(1);
+		let logical_clock = LogicalClock(self.changes.len().saturating_sub(1));
 		self.vector_clock.update(remote_id, logical_clock);
 	}
 
 	fn added_since_last_sync_with(&self, remote_id: NodeID) -> &[Key] {
 		let logical_clock = self.vector_clock.get(remote_id);
-		&self.changes[logical_clock..]
+		&self.changes[logical_clock.0..]
 	}
 
-	fn unrecorded_events(&self, local_keys: &[Key], remote: &Self, remote_keys: &[Key]) -> Events {
+	fn unrecorded_events(
+		&self,
+		local_keys: &[Key],
+		remote: &Self,
+		remote_keys: &[Key]
+	) -> Events {
 		remote_keys.iter().filter_map(|remote_key| {
 			if local_keys.contains(remote_key) {
                 return None
@@ -136,10 +193,12 @@ impl Node {
 		let local_keys = self.added_since_last_sync_with(remote.id).to_vec();
 		let remote_keys = remote.added_since_last_sync_with(self.id).to_vec();
 		
-		let new_local_events = self.unrecorded_events(&local_keys, remote, &remote_keys);
+		let new_local_events =
+			self.unrecorded_events(&local_keys, remote, &remote_keys);
 		self.add_remote(remote.id, new_local_events);
 
-		let new_remote_events = self.unrecorded_events(&remote_keys, self, &local_keys);		
+		let new_remote_events = 
+			self.unrecorded_events(&remote_keys, self, &local_keys);		
 		remote.add_remote(self.id, new_remote_events);
 	}
 }
@@ -193,11 +252,11 @@ mod tests {
 	#[test]
 	fn query_empty_vector_clock() {
 		let vc = VectorClock::new();
-		assert_eq!(vc.get(uuid::Uuid::new_v4()), 0);
+		assert_eq!(vc.get(uuid::Uuid::new_v4()), LogicalClock(0));
 	}
 
 	proptest! {
-		#[test] 
+		#[test]
 		fn can_add_and_query_single_element(val in arb_bytes()) {
 			let mut node = Node::new(vec![]);
 			let key = node.add_local(&val);
@@ -226,7 +285,6 @@ mod tests {
 			assert_eq!(db_left_a, db_right_a);
 		}
 		
-		/*
 		// a . b = b . a
 		#[test]
 		fn commutative(
@@ -238,6 +296,5 @@ mod tests {
 
 			assert_eq!(db_left_a, db_right_b);
 		}
-		*/
 	}
 }

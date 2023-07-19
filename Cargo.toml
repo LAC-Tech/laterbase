@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytemuck = "1.13.1"
 ulid = "1.0.0"
 uuid = { version = "1.4.0", features = ["v4"] }
 
 [dev-dependencies]
+bincode = "1.3.3"
 pretty_assertions = "1.4.0"
 proptest = "1.0.0"
+serde = { version = "1.0.171", features = ["derive"] }
