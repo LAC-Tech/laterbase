@@ -4,8 +4,7 @@ type DBID = uuid::Uuid;
 type Key = ulid::Ulid;
 type Events = BTreeMap<Key, Vec<u8>>;
 
-#[derive(Debug)]
-#[cfg_attr(test, derive(Clone))]
+#[derive(Clone, Debug)]
 struct VectorClock(std::collections::HashMap<DBID, usize>);
 
 impl VectorClock {
@@ -25,7 +24,7 @@ impl VectorClock {
 type ViewData = BTreeMap<Vec<u8>, Vec<u8>>; 
 type ViewFn = fn(&ViewData, &[u8]) -> ViewData;
 
-#[cfg_attr(test, derive(Clone))]
+#[derive(Clone)]
 pub struct View {
 	data: ViewData,
 	f: ViewFn
@@ -138,24 +137,23 @@ mod test {
 	}
 }
 
-#[derive(Debug)]
-#[cfg_attr(test, derive(Clone))]
+#[derive(Clone, Debug)]
 pub struct DB {
 	id: DBID,
 	events: Events,
 	changes: Vec<Key>,
 	vector_clock: VectorClock,
-	views: std::collections::HashMap<String, BTreeMap<String, View>>
+	//views: std::collections::HashMap<String, BTreeMap<String, View>>
 }
 
 impl DB {
-	pub fn new(views: Vec<View>) -> Self {
+	pub fn new() -> Self {
 		let id = uuid::Uuid::new_v4();
 		let events = Events::new();
 		let changes = vec![];
 		let vector_clock = VectorClock::new();
-		let views = std::collections::HashMap::new();
-		Self {id, events, changes, vector_clock, views}
+		//let views = std::collections::HashMap::new();
+		Self {id, events, changes, vector_clock}
 	}
 
 	pub fn add_local(&mut self, v: &[u8]) -> Key {
@@ -218,8 +216,29 @@ impl PartialEq for DB {
 // Equality of event streams is reflexive
 impl Eq for DB {}
 
+#[derive(Clone)]
+struct AppState {
+	dbs: BTreeMap<String, DB>
+}
+
+impl AppState {
+	fn new() -> Self {
+		let dbs = BTreeMap::new();
+		Self { dbs }
+	}
+}
+
+async fn create_db(
+	axum::extract::Path(name): axum::extract::Path<String>,
+	axum::extract::State(mut state): axum::extract::State<AppState>,
+) {
+	state.dbs.insert(name, DB::new());
+}
+
 fn app() -> axum::Router {
 	axum::Router::new()
+		 .route("/db/:name", axum::routing::post(|| async { "Hello, World!" }))
+		 .with_state(AppState::new())
 }
 
 #[cfg(test)]
@@ -246,7 +265,7 @@ mod tests {
 	*/
 	fn arb_db_pairs() -> impl Strategy<Value = (DB, DB)> {
 		arb_byte_vectors().prop_map(|byte_vectors| {
-			let mut db1 = DB::new(vec![]);
+			let mut db1 = DB::new();
 
 			for byte_vec in byte_vectors {
 				db1.add_local(&byte_vec);
@@ -264,10 +283,30 @@ mod tests {
 		assert_eq!(vc.get(uuid::Uuid::new_v4()), 0);
 	}
 
+	use axum::{http, body};
+	use tower::ServiceExt; // for `oneshot` and `ready`
+	
+	#[tokio::test]
+	async fn can_create_db() {
+		let req = http::Request::builder()
+			.method("POST")
+			.uri("/db/lmao")
+			.body(body::Body::empty())
+			.unwrap();
+
+		// `Router` implements `tower::Service<Request<Body>>` so we can
+        // call it like any tower service, no need to run an HTTP server.
+        let response = app().oneshot(req).await.unwrap();
+
+        assert_eq!(response.status(), http::StatusCode::OK);
+
+	
+	}
+
 	proptest! {
 		#[test]
 		fn can_add_and_query_single_element(val in arb_bytes()) {
-			let mut db = DB::new(vec![]);
+			let mut db = DB::new();
 			let key = db.add_local(&val);
 			assert_eq!(db.get(&key), Some(val.clone().as_slice()))
 		}
