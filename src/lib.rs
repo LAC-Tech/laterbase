@@ -284,23 +284,21 @@ mod tests {
 	}
 
 	use axum::{http, body};
+	use tower::Service; // for `call`
+
 	use tower::ServiceExt; // for `oneshot` and `ready`
 	
 	#[tokio::test]
 	async fn can_create_db() {
-		let req = http::Request::builder()
-			.method("POST")
-			.uri("/db/lmao")
-			.body(body::Body::empty())
-			.unwrap();
+		let mut app = app();
 
-		// `Router` implements `tower::Service<Request<Body>>` so we can
-        // call it like any tower service, no need to run an HTTP server.
-        let response = app().oneshot(req).await.unwrap();
-
+        let request = http::Request::builder().uri("/").body(body::Body::empty()).unwrap();
+        let response = app.ready().await.unwrap().call(request).await.unwrap();
         assert_eq!(response.status(), http::StatusCode::OK);
 
-	
+        let request = http::Request::builder().uri("/").body(body::Body::empty()).unwrap();
+        let response = app.ready().await.unwrap().call(request).await.unwrap();
+        assert_eq!(response.status(), http::StatusCode::OK);
 	}
 
 	proptest! {
