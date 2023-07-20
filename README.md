@@ -38,41 +38,63 @@ erDiagram
 
 #### Event Key
 
-Each key needs to be both unique, and sortable.
+Each key needs to be
 
-Using ULIDs. Considered hybrid logical clocks but I don't need to capture any causality at this level.
+- unique, so you can never get id conflicts when syncing from other nodes
+
+- sortable, so you have an order when computing aggregates
+
+Using ULIDs. Considered hybrid logical clocks but I don't need to capture causality in my ids.
 
 Also considered UUIDv7s but the rust package situation was slightly more flakey. Should probably revisit this decision on the actual merits.
 
 #### Event Value
 
-Arbitrary bytes. It's up to the user to make sense of this.
+My first instinct was these should be arbitrary bytes, à la embedded key value stores.
+
+This raises a number of questions, however:
+
+- What format should http responses be in? It's one thing to claim arbitrary bytes for the individual events, but some structure has to be imposed to represent an array of them in an http body.
+
+- Is forcing every view function to de-serialize and handle schema changes practical?
 
 #### Aggregate Key
 
-Arbitrary bytes
+TODO
 
 ### Aggregate Value
 
-Arbitrary bytes
+TODO
 
 ### HTTP Endpoints
 
 #### Write one or more events
 
 ```
-POST /{db-name}/e
+POST /db/{db-name}/e
 ```
 
 #### Event changes feed
 
 ```
-GET /{db-name}/e?vv={version-vector} 
+GET /db/{db-name}/e?lc={logical_clock}
 ```
 
-Gets all the events the user *doesn't know about*.
+Gets all the events a node *doesn't know about*.
 
 This is not the same as getting all events that have happened since a certain time, since it's possible to backdate events. They are however returned in order of their hybrid logical clocks.
+
+
+
+#### Bulk read arbitrary events
+
+```
+```
+GET /db/{db-name}/e?keys={key1, key2}
+```
+```
+
+Since the keys are ulids, keys are in crockfords base32 text format.
 
 #### Query View
 
@@ -108,13 +130,15 @@ Modelling the entire database as a grow only set, using delta states.
 
 Persist them on read. Reads are fast in LMDB, and we might as well insert on demand.
 
-### Why don't you use Kafka?
+### FAQ
+
+#### Why not Kafka?
 
 TODO:
 
-### Why LMDB?
+#### Why LMDB?
 
-To clarify, not 100% that LMDB should be the server side backing store. But I like it because...
+Not 100% that LMDB should be the server side backing store. But I like it because...
 
 - simple and does one thing. Less to learn/remember
 - stable
@@ -122,12 +146,12 @@ To clarify, not 100% that LMDB should be the server side backing store. But I li
 - easy to build
 - fast reads
 
-### Why not LMDB?
+#### Why not LMDB?
 
 - Theoretically an LSM might be better for fast write speeds. TODO: actually measure this.
 - Only one writer at a time
 
-### Why Rust?
+#### Why Rust?
 
 - zero overhead calling C libs (probably needed for embedded K/V stores)
 - standard library is big and well documented
@@ -136,13 +160,13 @@ To clarify, not 100% that LMDB should be the server side backing store. But I li
 - kind of functional, which is nice
 - tooling is great
 
-### Why not Zig?
+#### Why not Zig?
 
 - Not 1.0 yet
 - No mature web micro-framework
 - Less expressive than rust
 
-### Why Axum?
+#### Why Axum?
 
 - Backed by Tokio-rs, which has been around in rust for a long time
 - Nicer API than Actix-web
@@ -153,6 +177,10 @@ To clarify, not 100% that LMDB should be the server side backing store. But I li
 - ~~G-Set in rust (copy JS version, but make it mutable)~~
 - ~~Delta state version. Make sure it passes tests~~
 - ~~Sorted version using sequential IDs~~
+- HTTP Server
+  - ~~Create new DB with POST request~~
+  
+  - Factor out DB into its own file
 - Add pre-compiled views at runtime
 - "State machine" stye arbiraries that simulate multiple merges
 - Simulate data loss of a node, and syncing again
@@ -161,7 +189,6 @@ To clarify, not 100% that LMDB should be the server side backing store. But I li
 - Sync views??
 - Persistent storage using LMDB or similar
 - Factor out in-memory storage engine, make a trait
-- HTTP Server
 - More tests with tokio-rs turmoil, or whatever works
 - ???
 - Profit
