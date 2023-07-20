@@ -2,9 +2,20 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use axum::{body, extract, http, response, Router, routing};
 
 type Dbid = uuid::Uuid;
-type Key = ulid::Ulid;
 type Event = (Key, Vec<u8>);
 type Events = BTreeMap<Key, Vec<u8>>;
+
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord, serde::Serialize, serde::Deserialize)]
+pub struct Key {
+    #[serde(with = "ulid::serde::ulid_as_u128")]
+    ulid: ulid::Ulid
+}
+
+impl Key {
+	fn new() -> Self {
+		Self { ulid: ulid::Ulid::new() }
+	}
+}
 
 #[derive(Clone, Debug)]
 struct VectorClock(HashMap<Dbid, usize>);
@@ -159,10 +170,10 @@ impl DB {
 	}
 
 	pub fn add_local(&mut self, v: &[u8]) -> Key {
-		let key = ulid::Ulid::new();
-		self.events.insert(key, v.to_vec());
-		self.changes.push(key);
-		key
+		let k = Key::new();
+		self.events.insert(k, v.to_vec());
+		self.changes.push(k);
+		k
 	}
 
 	pub fn get(&self, k: &Key) -> Option<&[u8]> {
@@ -234,6 +245,11 @@ async fn create_db(
 	extract::State(mut state): extract::State<AppState>,
 ) {
 	state.dbs.insert(name, DB::new());
+}
+
+#[derive(serde::Deserialize)]
+struct BulkReadParams {
+	keys: Vec<Key>
 }
 
 async fn bulk_read(
