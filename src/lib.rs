@@ -1,23 +1,23 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-type NodeID = uuid::Uuid;
+type DBID = uuid::Uuid;
 type Key = ulid::Ulid;
 type Events = BTreeMap<Key, Vec<u8>>;
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
-struct VectorClock(std::collections::HashMap<NodeID, usize>);
+struct VectorClock(std::collections::HashMap<DBID, usize>);
 
 impl VectorClock {
 	fn new() -> Self {
 		Self(std::collections::HashMap::new())
 	}
 
-	fn get(&self, node_id: NodeID) -> usize {
-		*self.0.get(&node_id).unwrap_or(&0)
+	fn get(&self, db_id: DBID) -> usize {
+		*self.0.get(&db_id).unwrap_or(&0)
 	}
 
-	fn update(&mut self, remote_id: NodeID, local_clock: usize) {
+	fn update(&mut self, remote_id: DBID, local_clock: usize) {
 		self.0.insert(remote_id, local_clock);
 	}
 }
@@ -140,17 +140,15 @@ mod test {
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Clone))]
-pub struct Node {
-	id: NodeID,
+pub struct DB {
+	id: DBID,
 	events: Events,
 	changes: Vec<Key>,
 	vector_clock: VectorClock,
-	views: std::collections::HashMap<
-		String,
-		std::collections::BTreeMap<String, View>>
+	views: std::collections::HashMap<String, BTreeMap<String, View>>
 }
 
-impl Node {
+impl DB {
 	pub fn new(views: Vec<View>) -> Self {
 		let id = uuid::Uuid::new_v4();
 		let events = Events::new();
@@ -171,14 +169,14 @@ impl Node {
 		self.events.get(k).map(|v| v.as_slice())
 	}
 
-	fn add_remote(&mut self, remote_id: NodeID, remote_events: Events) {
+	fn add_remote(&mut self, remote_id: DBID, remote_events: Events) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
 		let logical_clock = self.changes.len().saturating_sub(1);
 		self.vector_clock.update(remote_id, logical_clock);
 	}
 
-	fn keys_added_since_last_sync(&self, remote_id: NodeID) -> BTreeSet<Key> {
+	fn keys_added_since_last_sync(&self, remote_id: DBID) -> BTreeSet<Key> {
 		let logical_clock = self.vector_clock.get(remote_id);
 		self.changes[logical_clock..].iter().cloned().collect()
 	}
@@ -198,7 +196,7 @@ impl Node {
 		.collect()
 	}
 
-	pub fn merge(&mut self, remote: &mut Node) {
+	pub fn merge(&mut self, remote: &mut DB) {
 		let local_ks = self.keys_added_since_last_sync(remote.id);
 		let remote_ks = remote.keys_added_since_last_sync(self.id);
 
@@ -210,7 +208,7 @@ impl Node {
 	}
 }
 
-impl PartialEq for Node {
+impl PartialEq for DB {
 	fn eq(&self, other: &Self) -> bool {
     	// Events are the source of truth!
         self.events == other.events
@@ -218,7 +216,7 @@ impl PartialEq for Node {
 }
 
 // Equality of event streams is reflexive
-impl Eq for Node {}
+impl Eq for DB {}
 
 fn app() -> axum::Router {
 	axum::Router::new()
@@ -246,17 +244,17 @@ mod tests {
 		Generate identical pairs of databases, that can be independently
 		mutated to prove algebraic properties of CRDTs
 	*/
-	fn arb_db_pairs() -> impl Strategy<Value = (Node, Node)> {
+	fn arb_db_pairs() -> impl Strategy<Value = (DB, DB)> {
 		arb_byte_vectors().prop_map(|byte_vectors| {
-			let mut node1 = Node::new(vec![]);
+			let mut db1 = DB::new(vec![]);
 
 			for byte_vec in byte_vectors {
-				node1.add_local(&byte_vec);
+				db1.add_local(&byte_vec);
 			}
 
-			let node2 = node1.clone();
+			let db2 = db1.clone();
 
-		    (node1, node2)
+		    (db1, db2)
 		})
 	}
 
@@ -269,15 +267,15 @@ mod tests {
 	proptest! {
 		#[test]
 		fn can_add_and_query_single_element(val in arb_bytes()) {
-			let mut node = Node::new(vec![]);
-			let key = node.add_local(&val);
-			assert_eq!(node.get(&key), Some(val.clone().as_slice()))
+			let mut db = DB::new(vec![]);
+			let key = db.add_local(&val);
+			assert_eq!(db.get(&key), Some(val.clone().as_slice()))
 		}
 
 		#[test]
-		fn idempotent((mut node1, mut node2) in arb_db_pairs()) {
-			node1.merge(&mut node2);
-			assert_eq!(node1, node2);
+		fn idempotent((mut db1, mut db2) in arb_db_pairs()) {
+			db1.merge(&mut db2);
+			assert_eq!(db1, db2);
 		}
 
 		// (a . b) . c = a . (b . c)
