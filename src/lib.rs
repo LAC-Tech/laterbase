@@ -176,8 +176,10 @@ impl DB {
 		k
 	}
 
-	pub fn get(&self, k: &Key) -> Option<&[u8]> {
-		self.events.get(k).map(|v| v.as_slice())
+	pub fn get(&self, ks: &[Key]) -> Vec<&[u8]> {
+		ks.iter()
+			.filter_map(|k| self.events.get(k).map(|v| v.as_slice()))
+			.collect()
 	}
 
 	fn add_remote(&mut self, remote_id: Dbid, remote_events: Events) {
@@ -248,15 +250,18 @@ async fn create_db(
 }
 
 #[derive(serde::Deserialize)]
-struct BulkReadParams {
+struct BulkRead {
 	keys: Vec<Key>
 }
 
 async fn bulk_read(
-	extract::Query(kv): extract::Query<HashMap<String, String>>,
+	extract::Query(db_name): extract::Query<String>,
+	extract::Query(BulkRead {keys}): extract::Query<BulkRead>,
 	extract::State(state): extract::State<AppState>
 ) -> impl response::IntoResponse {
-
+	state.dbs.get(&db_name).map(|db| {
+		db.get(keys)
+	})
 }
 
 fn app() -> Router {
@@ -336,7 +341,9 @@ mod tests {
 		fn can_add_and_query_single_element(val in arb_bytes()) {
 			let mut db = DB::new();
 			let key = db.add_local(&val);
-			assert_eq!(db.get(&key), Some(val.clone().as_slice()))
+			let actual = db.get(&[key]).first().cloned();
+			let expected: Option<&[u8]> = Some(&val);
+			assert_eq!(actual, expected)
 		}
 
 		#[test]
