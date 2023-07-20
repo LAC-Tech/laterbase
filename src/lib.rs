@@ -1,22 +1,24 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use axum::{body, extract, http, response, Router, routing};
 
-type DBID = uuid::Uuid;
+type Dbid = uuid::Uuid;
 type Key = ulid::Ulid;
+type Event = (Key, Vec<u8>);
 type Events = BTreeMap<Key, Vec<u8>>;
 
 #[derive(Clone, Debug)]
-struct VectorClock(std::collections::HashMap<DBID, usize>);
+struct VectorClock(HashMap<Dbid, usize>);
 
 impl VectorClock {
 	fn new() -> Self {
-		Self(std::collections::HashMap::new())
+		Self(HashMap::new())
 	}
 
-	fn get(&self, db_id: DBID) -> usize {
+	fn get(&self, db_id: Dbid) -> usize {
 		*self.0.get(&db_id).unwrap_or(&0)
 	}
 
-	fn update(&mut self, remote_id: DBID, local_clock: usize) {
+	fn update(&mut self, remote_id: Dbid, local_clock: usize) {
 		self.0.insert(remote_id, local_clock);
 	}
 }
@@ -139,7 +141,7 @@ mod test {
 
 #[derive(Clone, Debug)]
 pub struct DB {
-	id: DBID,
+	id: Dbid,
 	events: Events,
 	changes: Vec<Key>,
 	vector_clock: VectorClock,
@@ -167,14 +169,14 @@ impl DB {
 		self.events.get(k).map(|v| v.as_slice())
 	}
 
-	fn add_remote(&mut self, remote_id: DBID, remote_events: Events) {
+	fn add_remote(&mut self, remote_id: Dbid, remote_events: Events) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
 		let logical_clock = self.changes.len().saturating_sub(1);
 		self.vector_clock.update(remote_id, logical_clock);
 	}
 
-	fn keys_added_since_last_sync(&self, remote_id: DBID) -> BTreeSet<Key> {
+	fn keys_added_since_last_sync(&self, remote_id: Dbid) -> BTreeSet<Key> {
 		let logical_clock = self.vector_clock.get(remote_id);
 		self.changes[logical_clock..].iter().cloned().collect()
 	}
@@ -223,21 +225,27 @@ struct AppState {
 
 impl AppState {
 	fn new() -> Self {
-		let dbs = BTreeMap::new();
-		Self { dbs }
+		Self { dbs: BTreeMap::new() }
 	}
 }
 
 async fn create_db(
-	axum::extract::Path(name): axum::extract::Path<String>,
-	axum::extract::State(mut state): axum::extract::State<AppState>,
+	extract::Path(name): extract::Path<String>,
+	extract::State(mut state): extract::State<AppState>,
 ) {
 	state.dbs.insert(name, DB::new());
 }
 
-fn app() -> axum::Router {
-	axum::Router::new()
-		 .route("/db/:name", axum::routing::post(|| async { "Hello, World!" }))
+async fn bulk_read(
+	extract::Query(kv): extract::Query<HashMap<String, String>>,
+	extract::State(state): extract::State<AppState>
+) -> impl response::IntoResponse {
+
+}
+
+fn app() -> Router {
+	Router::new()
+		 .route("/db/:name", routing::post(create_db))
 		 .with_state(AppState::new())
 }
 
@@ -283,22 +291,28 @@ mod tests {
 		assert_eq!(vc.get(uuid::Uuid::new_v4()), 0);
 	}
 
-	use axum::{http, body};
 	use tower::Service; // for `call`
-
 	use tower::ServiceExt; // for `oneshot` and `ready`
 	
 	#[tokio::test]
 	async fn can_create_db() {
 		let mut app = app();
 
-        let request = http::Request::builder().uri("/").body(body::Body::empty()).unwrap();
-        let response = app.ready().await.unwrap().call(request).await.unwrap();
-        assert_eq!(response.status(), http::StatusCode::OK);
+        let req = http::Request::builder()
+			.method("POST")
+			.uri("/db/:name")
+			.body(body::Body::empty())
+			.unwrap();
+        let res = app.ready().await.unwrap().call(req).await.unwrap();
+        assert_eq!(res.status(), http::StatusCode::OK);
 
-        let request = http::Request::builder().uri("/").body(body::Body::empty()).unwrap();
-        let response = app.ready().await.unwrap().call(request).await.unwrap();
-        assert_eq!(response.status(), http::StatusCode::OK);
+        let req = http::Request::builder()
+			.method("GET")
+			.uri("/db/:name")
+			.body(body::Body::empty())
+			.unwrap();
+        let res = app.ready().await.unwrap().call(req).await.unwrap();
+        assert_eq!(res.status(), http::StatusCode::OK);
 	}
 
 	proptest! {
