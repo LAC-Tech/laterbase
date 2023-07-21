@@ -110,8 +110,9 @@ mod test {
         let expected: Option<MeanAccum> = 
             Some(bincode::deserialize(&expected).unwrap());
 
-		let actual: Option<MeanAccum> =
-			running_average.get(&id).map(|bs| bincode::deserialize(&bs).unwrap());
+		let actual: Option<MeanAccum> = running_average
+			.get(&id)
+			.map(|bs| bincode::deserialize(&bs).unwrap());
 
 		assert_eq!(actual, expected);
 	}
@@ -119,6 +120,8 @@ mod test {
 
 mod db {
     use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+	trait Val: std::cmp::PartialEq + Clone {}
 
     #[derive(Clone, Debug)]
     struct VectorClock(HashMap<Dbid, usize>);
@@ -158,43 +161,44 @@ mod db {
             Self { ulid: ulid::Ulid::new() }
         }
     }
-    type Event = (Key, Vec<u8>);
+
     type Dbid = uuid::Uuid;
-    type Events = BTreeMap<Key, Vec<u8>>;
 
     #[derive(Clone, Debug)]
-    pub struct Mem {
+    pub struct Mem<V> {
         id: Dbid,
-        events: Events,
+        events: BTreeMap<Key, V>,
         changes: Vec<Key>,
         vector_clock: VectorClock,
         //views: std::collections::HashMap<String, BTreeMap<String, View>>
     }
 
-    impl Mem {
+    impl<V: Val> Mem<V> {
         pub fn new() -> Self {
             let id = uuid::Uuid::new_v4();
-            let events = Events::new();
+            let events = BTreeMap::new();
             let changes = vec![];
             let vector_clock = VectorClock::new();
             //let views = std::collections::HashMap::new();
             Self {id, events, changes, vector_clock}
         }
 
-        pub fn add_local(&mut self, v: &[u8]) -> Key {
+        pub fn add_local(&mut self, v: &V) -> Key {
             let k = Key::new();
-            self.events.insert(k, v.to_vec());
+            self.events.insert(k, *v);
             self.changes.push(k);
             k
         }
 
-        pub fn get(&self, ks: &[Key]) -> Vec<&[u8]> {
-            ks.iter()
-                .filter_map(|k| self.events.get(k).map(|v| v.as_slice()))
-                .collect()
+        pub fn get(&self, ks: &[Key]) -> Vec<&V> {
+            ks.iter().filter_map(|k| self.events.get(k)).collect()
         }
 
-        fn add_remote(&mut self, remote_id: Dbid, remote_events: Events) {
+        fn add_remote(
+			&mut self, 
+			remote_id: Dbid, 
+			remote_events: BTreeMap<Key, V>
+		) {
             self.changes.extend(remote_events.keys());
             self.events.extend(remote_events);
             let logical_clock = self.changes.len().saturating_sub(1);
@@ -210,18 +214,19 @@ mod db {
             &self,
             local_ks: &BTreeSet<Key>,
             remote_ks: &BTreeSet<Key>
-        ) -> Events {
-            local_ks.difference(remote_ks).map(|remote_key| {
-                let val = self.events
-                    .get(remote_key)
-                    .expect("database to be consistent");
+        ) -> BTreeMap<Key, V> {
+            local_ks.difference(remote_ks)
+				.map(|remote_key| {
+					let val = self.events
+						.get(remote_key)
+						.expect("database to be consistent");
 
-                (*remote_key, val.clone())
-            })
-            .collect()
+					(*remote_key, *val)
+				})
+				.collect()
         }
 
-        pub fn merge(&mut self, remote: &mut Mem) {
+        pub fn merge(&mut self, remote: &mut Mem<V>) {
             let local_ks = self.keys_added_since_last_sync(remote.id);
             let remote_ks = remote.keys_added_since_last_sync(self.id);
 
@@ -233,7 +238,7 @@ mod db {
         }
     }
 
-    impl PartialEq for Mem {
+    impl<V: Val> PartialEq for Mem<V> {
         fn eq(&self, other: &Self) -> bool {
             // Events are the source of truth!
             self.events == other.events
@@ -241,7 +246,7 @@ mod db {
     }
 
     // Equality of event streams is reflexive
-    impl Eq for Mem {}
+    impl<V: Val> Eq for Mem<V> {}
 
 	#[cfg(test)]
 	mod tests {
@@ -265,7 +270,7 @@ mod db {
 			Generate identical pairs of databases, that can be independently
 			mutated to prove algebraic properties of CRDTs
 		*/
-		fn arb_db_pairs() -> impl Strategy<Value = (Mem, Mem)> {
+		fn arb_db_pairs() -> impl Strategy<Value = (Mem<Vec<u8>>, Mem<Vec<u8>>)> {
 			arb_byte_vectors().prop_map(|byte_vectors| {
 				let mut db1 = Mem::new();
 
@@ -334,11 +339,11 @@ mod db {
 }
 
 #[derive(Clone)]
-struct AppState {
-	dbs: BTreeMap<String, db::Mem>
+struct AppState<V: std::cmp::PartialEq> {
+	dbs: BTreeMap<String, db::Mem<V>>
 }
 
-impl AppState {
+impl<V: std::cmp::PartialEq> AppState<V> {
 	fn new() -> Self {
 		Self { dbs: BTreeMap::new() }
 	}
@@ -346,7 +351,7 @@ impl AppState {
 
 async fn create_db(
 	extract::Path(name): extract::Path<String>,
-	extract::State(mut state): extract::State<AppState>,
+	extract::State(mut state): extract::State<AppState<Vec<u8>>>
 ) {
 	state.dbs.insert(name, db::Mem::new());
 }
