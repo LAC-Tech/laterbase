@@ -121,8 +121,8 @@ mod test {
 mod db {
     use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-	pub trait Val: std::cmp::PartialEq + Clone {}
-    impl<T: PartialEq + Clone> Val for T {}
+	pub trait Val: std::cmp::PartialEq + Clone + Send + std::marker::Sync {}
+    impl<T: PartialEq + Clone + Send + std::marker::Sync> Val for T {}
 
     #[derive(Clone, Debug)]
     struct VectorClock(HashMap<Dbid, usize>);
@@ -191,7 +191,7 @@ mod db {
             k
         }
 
-        pub fn get<'a>(&self, ks: &[Key]) -> impl Iterator<Item = &'a V> {
+        pub fn get<'a>(&'a self, ks: &'a [Key]) -> impl Iterator<Item = &'a V> {
             ks.iter().filter_map(|k| self.events.get(k))
         }
 
@@ -296,8 +296,8 @@ mod db {
 			fn can_add_and_query_single_element(val in arb_bytes()) {
 				let mut db = Mem::new();
 				let key = db.add_local(&val);
-				let actual = db.get(&[key]).next().cloned().map(|e| e.as_slice());
-				let expected: Option<&[u8]> = Some(&val);
+				let actual = db.get(&[key]).next().cloned();
+				let expected = Some(val);
 				assert_eq!(actual, expected)
 			}
 
@@ -352,8 +352,10 @@ impl<V: db::Val> AppState<V> {
 async fn create_db<V: db::Val>(
 	extract::Path(name): extract::Path<String>,
 	extract::State(mut state): extract::State<AppState<V>>
-) {
+) -> impl response::IntoResponse {
 	state.dbs.insert(name, db::Mem::new());
+
+    http::StatusCode::CREATED
 }
 
 #[derive(serde::Deserialize)]
@@ -371,7 +373,7 @@ async fn bulk_read<V: db::Val + serde::Serialize>(
     Ok(axum::Json(events.collect()))
 }
 
-fn app<V: db::Val>() -> Router {
+fn app<V: db::Val + 'static>() -> Router {
 	Router::new()
 		 .route("/db/:name", routing::post(create_db::<V>))
 		 .with_state(AppState::new())
@@ -387,7 +389,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn can_create_db() {
-		let mut app = app();
+		let mut app = app::<i32>();
 
 		let req = http::Request::builder()
 			.method("POST")

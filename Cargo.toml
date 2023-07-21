@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.6.19"
+axum = { version = "0.6.19", features = ["macros"] }
 serde = { version = "1.0.171", features = ["derive"] }
 ulid = { version = "1.0.0", features = ["serde"] }
 uuid = { version = "1.4.0", features = ["v4"] }
