@@ -122,6 +122,7 @@ mod db {
     use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 	trait Val: std::cmp::PartialEq + Clone {}
+    impl<T: PartialEq + Clone> Val for T {}
 
     #[derive(Clone, Debug)]
     struct VectorClock(HashMap<Dbid, usize>);
@@ -185,7 +186,7 @@ mod db {
 
         pub fn add_local(&mut self, v: &V) -> Key {
             let k = Key::new();
-            self.events.insert(k, *v);
+            self.events.insert(k, v.clone());
             self.changes.push(k);
             k
         }
@@ -221,7 +222,7 @@ mod db {
 						.get(remote_key)
 						.expect("database to be consistent");
 
-					(*remote_key, *val)
+					(*remote_key, val.clone())
 				})
 				.collect()
         }
@@ -296,7 +297,7 @@ mod db {
 			fn can_add_and_query_single_element(val in arb_bytes()) {
 				let mut db = Mem::new();
 				let key = db.add_local(&val);
-				let actual = db.get(&[key]).first().cloned();
+				let actual = db.get(&[key]).first().cloned().map(|e| e.as_slice());
 				let expected: Option<&[u8]> = Some(&val);
 				assert_eq!(actual, expected)
 			}
