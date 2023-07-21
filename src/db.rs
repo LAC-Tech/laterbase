@@ -50,7 +50,6 @@ pub struct Mem<V> {
 	events: BTreeMap<Key, V>,
 	changes: Vec<Key>,
 	vector_clock: VectorClock,
-	//views: std::collections::HashMap<String, BTreeMap<String, View>>
 }
 
 impl<V: Val> Mem<V> {
@@ -63,11 +62,17 @@ impl<V: Val> Mem<V> {
 		Self {id, events, changes, vector_clock}
 	}
 
-	pub fn add_local(&mut self, v: &V) -> Key {
-		let k = Key::new();
-		self.events.insert(k, v.clone());
-		self.changes.push(k);
-		k
+	pub fn add_local(&mut self, vs: &[V]) -> Vec<Key> {
+		let mut keys = vec![];
+
+		for v  in vs {
+			let k = Key::new();
+			self.events.insert(k, v.clone());
+			self.changes.push(k);
+			keys.push(k)
+		}
+
+		keys
 	}
 
 	pub fn get<'a>(&'a self, ks: &'a [Key]) -> impl Iterator<Item = &'a V> {
@@ -154,9 +159,7 @@ mod tests {
 		arb_byte_vectors().prop_map(|byte_vectors| {
 			let mut db1 = Mem::new();
 
-			for byte_vec in byte_vectors {
-				db1.add_local(&byte_vec);
-			}
+			db1.add_local(&byte_vectors);
 
 			let db2 = db1.clone();
 
@@ -174,10 +177,9 @@ mod tests {
 		#[test]
 		fn can_add_and_query_single_element(val in arb_bytes()) {
 			let mut db = Mem::new();
-			let key = db.add_local(&val);
-			let actual = db.get(&[key]).next().cloned();
-			let expected = Some(val);
-			assert_eq!(actual, expected)
+			let keys = db.add_local(&val);
+			let actual: Vec<u8> = db.get(&keys).cloned().collect();
+			assert_eq!(actual, val)
 		}
 
 		#[test]

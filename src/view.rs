@@ -1,3 +1,6 @@
+type ViewData = std::collections::BTreeMap<Vec<u8>, Vec<u8>>; 
+type ViewFn = fn(&ViewData, &[u8]) -> ViewData;
+
 #[derive(Clone)]
 pub struct View {
 	data: ViewData,
