@@ -121,7 +121,7 @@ mod test {
 mod db {
     use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-	trait Val: std::cmp::PartialEq + Clone {}
+	pub trait Val: std::cmp::PartialEq + Clone {}
     impl<T: PartialEq + Clone> Val for T {}
 
     #[derive(Clone, Debug)]
@@ -191,8 +191,8 @@ mod db {
             k
         }
 
-        pub fn get(&self, ks: &[Key]) -> Vec<&V> {
-            ks.iter().filter_map(|k| self.events.get(k)).collect()
+        pub fn get<'a>(&self, ks: &[Key]) -> impl Iterator<Item = &'a V> {
+            ks.iter().filter_map(|k| self.events.get(k))
         }
 
         fn add_remote(
@@ -291,13 +291,12 @@ mod db {
 			assert_eq!(vc.get(uuid::Uuid::new_v4()), 0);
 		}
 
-
 		proptest! {
 			#[test]
 			fn can_add_and_query_single_element(val in arb_bytes()) {
 				let mut db = Mem::new();
 				let key = db.add_local(&val);
-				let actual = db.get(&[key]).first().cloned().map(|e| e.as_slice());
+				let actual = db.get(&[key]).next().cloned().map(|e| e.as_slice());
 				let expected: Option<&[u8]> = Some(&val);
 				assert_eq!(actual, expected)
 			}
@@ -340,19 +339,19 @@ mod db {
 }
 
 #[derive(Clone)]
-struct AppState<V: std::cmp::PartialEq> {
+struct AppState<V: db::Val> {
 	dbs: BTreeMap<String, db::Mem<V>>
 }
 
-impl<V: std::cmp::PartialEq> AppState<V> {
+impl<V: db::Val> AppState<V> {
 	fn new() -> Self {
 		Self { dbs: BTreeMap::new() }
 	}
 }
 
-async fn create_db(
+async fn create_db<V: db::Val>(
 	extract::Path(name): extract::Path<String>,
-	extract::State(mut state): extract::State<AppState<Vec<u8>>>
+	extract::State(mut state): extract::State<AppState<V>>
 ) {
 	state.dbs.insert(name, db::Mem::new());
 }
@@ -362,21 +361,19 @@ struct BulkRead {
 	keys: Vec<db::Key>
 }
 
-/*
-async fn bulk_read(
+async fn bulk_read<V: db::Val + serde::Serialize>(
 	extract::Query(db_name): extract::Query<String>,
 	extract::Query(BulkRead {keys}): extract::Query<BulkRead>,
-	extract::State(state): extract::State<AppState>
-) -> impl response::IntoResponse {
-	state.dbs.get(&db_name).map(|db| {
-		db.get(keys)
-	})
+	extract::State(state): extract::State<AppState<V>>
+) -> Result<axum::Json<Vec<V>>, http::StatusCode> {
+    let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
+    let events =db.get(&keys).cloned();
+    Ok(axum::Json(events.collect()))
 }
-*/
 
-fn app() -> Router {
+fn app<V: db::Val>() -> Router {
 	Router::new()
-		 .route("/db/:name", routing::post(create_db))
+		 .route("/db/:name", routing::post(create_db::<V>))
 		 .with_state(AppState::new())
 }
 
