@@ -41,10 +41,11 @@ async fn bulk_read<V: db::Val + serde::Serialize>(
     Ok(axum::Json(events.collect()))
 }
 
-fn app<V: db::Val + 'static>() -> Router {
+pub fn app<V: db::Val + serde::Serialize + 'static>() -> Router {
 	Router::new()
 		 .route("/db/:name", routing::post(create_db::<V>))
-		 .with_state(AppState::new())
+		 .route("/db/:name/e/:args", routing::get(bulk_read::<V>))
+         .with_state(AppState::new())
 }
 
 #[cfg(test)]
