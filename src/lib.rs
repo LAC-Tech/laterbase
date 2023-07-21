@@ -20,7 +20,6 @@ async fn create_db<V: db::Val>(
 	extract::State(mut state): extract::State<AppState<V>>
 ) -> impl response::IntoResponse {
 	state.dbs.insert(name, db::Mem::new());
-
     http::StatusCode::CREATED
 }
 
@@ -35,8 +34,18 @@ async fn bulk_read<V: db::Val + serde::Serialize>(
 	extract::State(state): extract::State<AppState<V>>
 ) -> Result<axum::Json<Vec<V>>, http::StatusCode> {
     let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
-    let events =db.get(&keys).cloned();
+    let events = db.get(&keys).cloned();
     Ok(Json(events.collect()))
+}
+
+async fn bulk_write<V: db::Val + serde::Serialize>(
+	extract::Query(db_name): extract::Query<String>,
+    Json(values): Json<Vec<V>>,
+	extract::State(mut state): extract::State<AppState<V>>
+) -> Result<axum::Json<Vec<db::Key>>, http::StatusCode> {
+    let db = state.dbs.get_mut(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
+    let new_keys = db.add_local(&values);
+    Ok(Json(new_keys))
 }
 
 pub fn app<V: db::Val + serde::Serialize + 'static>() -> Router {

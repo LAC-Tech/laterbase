@@ -104,7 +104,12 @@ GET /{db-name}/{view-name}
 
 ### Views
 
-I wish to utilise CouchDB style map-reduce views over events. 
+So many design decisions...
+
+When should they be added? In what language?
+
+
+Broadly I wish to utilise CouchDB style map-reduce views over events. 
 
 These 'reduce' over an immutable log of events
 
@@ -113,9 +118,9 @@ graph LR;
     events[e1, e2, e3, ...]
     view
     events --> view
-    view --> record1
-    view --> record2
-    view --> record3
+    view --> key1-val1
+    view --> key2-val2
+    view --> key3-val3
 ```
 
 ## Design specifications
