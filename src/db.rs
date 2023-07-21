@@ -29,7 +29,7 @@ impl VectorClock {
 	Eq,
 	Ord,
 	serde::Serialize,
-	serde::Deserialize
+	serde::Deserialize,
 )]
 pub struct Key {
 	#[serde(with = "ulid::serde::ulid_as_u128")]
@@ -41,6 +41,9 @@ impl Key {
 		Self { ulid: ulid::Ulid::new() }
 	}
 }
+
+unsafe impl Send for Key {}
+unsafe impl Sync for Key {}
 
 type Dbid = uuid::Uuid;
 

@@ -39,9 +39,9 @@ async fn bulk_read<V: db::Val + serde::Serialize>(
 }
 
 async fn bulk_write<V: db::Val + serde::Serialize>(
+	extract::State(mut state): extract::State<AppState<V>>,
 	extract::Query(db_name): extract::Query<String>,
-    Json(values): Json<Vec<V>>,
-	extract::State(mut state): extract::State<AppState<V>>
+    Json(values): Json<Vec<V>>
 ) -> Result<axum::Json<Vec<db::Key>>, http::StatusCode> {
     let db = state.dbs.get_mut(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
     let new_keys = db.add_local(&values);
@@ -52,6 +52,7 @@ pub fn app<V: db::Val + serde::Serialize + 'static>() -> Router {
 	Router::new()
 		 .route("/db/:name", routing::post(create_db::<V>))
 		 .route("/db/:name/e/:args", routing::get(bulk_read::<V>))
+		 .route("/db/:name/e", routing::post(bulk_write::<V>))
          .with_state(AppState::new())
 }
 
