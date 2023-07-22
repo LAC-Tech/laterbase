@@ -21,7 +21,7 @@ impl VectorClock {
 }
 
 struct DBInfo {
-	type: String,
+	storage_engine: &'static str,
 	n_events: usize
 }
 
@@ -68,6 +68,10 @@ impl<E: Event> Mem<E> {
 		let vector_clock = VectorClock::new();
 		//let views = std::collections::HashMap::new();
 		Self {id, events, changes, vector_clock}
+	}
+
+	pub fn Info(&self) -> DBInfo {
+		DBInfo{ storage_engine: "memory", n_events: self.events.len() }
 	}
 
 	pub fn add_local(&mut self, es: &[E]) -> Vec<Key> {
