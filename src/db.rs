@@ -20,11 +20,16 @@ impl VectorClock {
 	}
 }
 
-struct DBInfo {
+#[derive(serde::Serialize)]
+pub struct Info {
 	storage_engine: &'static str,
 	n_events: usize
 }
 
+/*
+ * TODO: why did I wrap ulid around this? there was a reason
+ * maybe it's related to all of these things I'm deriving...
+ */
 #[derive(
 	Clone,
 	Copy,
@@ -47,9 +52,6 @@ impl Key {
 	}
 }
 
-unsafe impl Send for Key {}
-unsafe impl Sync for Key {}
-
 type Dbid = uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -70,8 +72,8 @@ impl<E: Event> Mem<E> {
 		Self {id, events, changes, vector_clock}
 	}
 
-	pub fn Info(&self) -> DBInfo {
-		DBInfo{ storage_engine: "memory", n_events: self.events.len() }
+	pub fn info(&self) -> Info {
+		Info{ storage_engine: "memory", n_events: self.events.len() }
 	}
 
 	pub fn add_local(&mut self, es: &[E]) -> Vec<Key> {

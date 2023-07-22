@@ -28,11 +28,19 @@ struct BulkRead {
 	keys: Vec<db::Key>
 }
 
-async fn bulk_read<V: db::Event + serde::Serialize>(
+async fn db_info<E: db::Event>(
+	extract::Path(db_name): extract::Path<String>,
+	extract::State(state): extract::State<AppState<E>>
+) -> Result<(http::StatusCode, axum::Json<db::Info>), http::StatusCode>  {
+	let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
+	Ok((http::StatusCode::CREATED, Json(db.info())))
+}
+
+async fn bulk_read<E: db::Event + serde::Serialize>(
 	extract::Query(db_name): extract::Query<String>,
 	extract::Query(BulkRead {keys}): extract::Query<BulkRead>,
-	extract::State(state): extract::State<AppState<V>>
-) -> Result<axum::Json<Vec<V>>, http::StatusCode> {
+	extract::State(state): extract::State<AppState<E>>
+) -> Result<axum::Json<Vec<E>>, http::StatusCode> {
     let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
     let events = db.get(&keys).cloned();
     Ok(Json(events.collect()))
@@ -51,6 +59,7 @@ async fn bulk_write<V: db::Event + serde::Serialize + for<'a> serde::Deserialize
 pub fn app<V: db::Event + serde::Serialize + 'static + for<'a> serde::Deserialize<'a>>() -> Router {
 	Router::new()
 		 .route("/db/:name", routing::post(create_db::<V>))
+		 .route("/db/:name", routing::get(db_info::<V>))
 		 .route("/db/:name/e/:args", routing::get(bulk_read::<V>))
 		 .route("/db/:name/e", routing::post(bulk_write::<V>))
          .with_state(AppState::new())
@@ -59,7 +68,7 @@ pub fn app<V: db::Event + serde::Serialize + 'static + for<'a> serde::Deserializ
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use pretty_assertions::assert_eq;
+	use pretty_assertions::{assert_eq, assert_ne};
 	
 	use tower::Service; // for `call`
 	use tower::ServiceExt; // for `oneshot` and `ready`
@@ -75,6 +84,17 @@ mod tests {
 			.unwrap();
 		let res = app.ready().await.unwrap().call(req).await.unwrap();
 		assert_eq!(res.status(), http::StatusCode::CREATED);
+
+		/*
+		let req = http::Request::builder()
+			.method("GET")
+			.url("/db/:name")
+			.body(body::Body::empty())
+			.unwrap();
+		
+		let res = app.ready().await.unwrap().call(req).await.unwrap();
+		//assert_ne!(k
+		*/
 	}
 }
 
