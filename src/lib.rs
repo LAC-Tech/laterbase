@@ -5,17 +5,17 @@ mod db;
 mod view;
 
 #[derive(Clone)]
-struct AppState<V: db::Val> {
+struct AppState<V: db::Event> {
 	dbs: BTreeMap<String, db::Mem<V>>
 }
 
-impl<V: db::Val> AppState<V> {
+impl<V: db::Event> AppState<V> {
 	fn new() -> Self {
 		Self { dbs: BTreeMap::new() }
 	}
 }
 
-async fn create_db<V: db::Val>(
+async fn create_db<V: db::Event>(
 	extract::Path(name): extract::Path<String>,
 	extract::State(mut state): extract::State<AppState<V>>
 ) -> impl response::IntoResponse {
@@ -28,7 +28,7 @@ struct BulkRead {
 	keys: Vec<db::Key>
 }
 
-async fn bulk_read<V: db::Val + serde::Serialize>(
+async fn bulk_read<V: db::Event + serde::Serialize>(
 	extract::Query(db_name): extract::Query<String>,
 	extract::Query(BulkRead {keys}): extract::Query<BulkRead>,
 	extract::State(state): extract::State<AppState<V>>
@@ -38,7 +38,7 @@ async fn bulk_read<V: db::Val + serde::Serialize>(
     Ok(Json(events.collect()))
 }
 
-async fn bulk_write<V: db::Val + serde::Serialize + for<'a> serde::Deserialize<'a>>(
+async fn bulk_write<V: db::Event + serde::Serialize + for<'a> serde::Deserialize<'a>>(
 	extract::State(mut state): extract::State<AppState<V>>,
 	extract::Query(db_name): extract::Query<String>,
     Json(values): Json<Vec<V>>
@@ -48,7 +48,7 @@ async fn bulk_write<V: db::Val + serde::Serialize + for<'a> serde::Deserialize<'
     Ok(Json(new_keys))
 }
 
-pub fn app<V: db::Val + serde::Serialize + 'static + for<'a> serde::Deserialize<'a>>() -> Router {
+pub fn app<V: db::Event + serde::Serialize + 'static + for<'a> serde::Deserialize<'a>>() -> Router {
 	Router::new()
 		 .route("/db/:name", routing::post(create_db::<V>))
 		 .route("/db/:name/e/:args", routing::get(bulk_read::<V>))
