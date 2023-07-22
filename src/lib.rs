@@ -38,7 +38,7 @@ async fn bulk_read<V: db::Val + serde::Serialize>(
     Ok(Json(events.collect()))
 }
 
-async fn bulk_write<V: db::Val + serde::Serialize>(
+async fn bulk_write<V: db::Val + serde::Serialize + for<'a> serde::Deserialize<'a>>(
 	extract::State(mut state): extract::State<AppState<V>>,
 	extract::Query(db_name): extract::Query<String>,
     Json(values): Json<Vec<V>>
@@ -48,7 +48,7 @@ async fn bulk_write<V: db::Val + serde::Serialize>(
     Ok(Json(new_keys))
 }
 
-pub fn app<V: db::Val + serde::Serialize + 'static>() -> Router {
+pub fn app<V: db::Val + serde::Serialize + 'static + for<'a> serde::Deserialize<'a>>() -> Router {
 	Router::new()
 		 .route("/db/:name", routing::post(create_db::<V>))
 		 .route("/db/:name/e/:args", routing::get(bulk_read::<V>))
