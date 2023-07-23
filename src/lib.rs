@@ -1,5 +1,7 @@
-use axum::{body, extract, http, Json, response, Router, routing};
 use std::collections::BTreeMap;
+
+use serde::{de, Serialize};
+use axum::{extract, http, Json, response, Router, routing};
 
 mod db;
 mod view;
@@ -32,12 +34,11 @@ async fn db_info<E: db::Event>(
 	extract::Path(db_name): extract::Path<String>,
 	extract::State(state): extract::State<AppState<E>>
 ) -> Result<(http::StatusCode, axum::Json<db::Info>), http::StatusCode>  {
-	return Err(http::StatusCode::INTERNAL_SERVER_ERROR);
-	//let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
-	//Ok((http::StatusCode::CREATED, Json(db.info())))
+	let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
+	Ok((http::StatusCode::CREATED, Json(db.info())))
 }
 
-async fn bulk_read<E: db::Event + serde::Serialize>(
+async fn bulk_read<E: db::Event + Serialize>(
 	extract::Query(db_name): extract::Query<String>,
 	extract::Query(BulkRead {keys}): extract::Query<BulkRead>,
 	extract::State(state): extract::State<AppState<E>>
@@ -47,7 +48,7 @@ async fn bulk_read<E: db::Event + serde::Serialize>(
     Ok(Json(events.collect()))
 }
 
-async fn bulk_write<V: db::Event + serde::Serialize + for<'a> serde::Deserialize<'a>>(
+async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
 	extract::State(mut state): extract::State<AppState<V>>,
 	extract::Query(db_name): extract::Query<String>,
     Json(values): Json<Vec<V>>
@@ -57,7 +58,7 @@ async fn bulk_write<V: db::Event + serde::Serialize + for<'a> serde::Deserialize
     Ok(Json(new_keys))
 }
 
-pub fn app<V: db::Event + serde::Serialize + 'static + for<'a> serde::Deserialize<'a>>() -> Router {
+pub fn app<V: db::Event + Serialize + 'static + de::DeserializeOwned>() -> Router {
 	Router::new()
 		 .route("/db/:name", routing::post(create_db::<V>))
 		 .route("/db/:name", routing::get(db_info::<V>))
@@ -73,6 +74,8 @@ mod tests {
 	
 	use tower::Service; // for `call`
 	use tower::ServiceExt; // for `oneshot` and `ready`
+	
+	use axum::body;
 
 	#[tokio::test]
 	async fn can_create_db() {
@@ -96,6 +99,7 @@ mod tests {
 		
 		let res = app.ready().await.unwrap().call(req).await.unwrap();
 		let status = &res.status();
+
 		let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
 		assert_eq!(status, &http::StatusCode::OK);
 		assert_ne!(body_bytes.len(), 0);
