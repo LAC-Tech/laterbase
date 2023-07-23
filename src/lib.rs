@@ -32,8 +32,9 @@ async fn db_info<E: db::Event>(
 	extract::Path(db_name): extract::Path<String>,
 	extract::State(state): extract::State<AppState<E>>
 ) -> Result<(http::StatusCode, axum::Json<db::Info>), http::StatusCode>  {
-	let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
-	Ok((http::StatusCode::CREATED, Json(db.info())))
+	return Err(http::StatusCode::INTERNAL_SERVER_ERROR);
+	//let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
+	//Ok((http::StatusCode::CREATED, Json(db.info())))
 }
 
 async fn bulk_read<E: db::Event + serde::Serialize>(
@@ -76,25 +77,28 @@ mod tests {
 	#[tokio::test]
 	async fn can_create_db() {
 		let mut app = app::<i32>();
+		
+		let db_name = "test";
 
 		let req = http::Request::builder()
 			.method("POST")
-			.uri("/db/:name")
+			.uri(format!("/db/{db_name}"))
 			.body(body::Body::empty())
 			.unwrap();
 		let res = app.ready().await.unwrap().call(req).await.unwrap();
 		assert_eq!(res.status(), http::StatusCode::CREATED);
 
-		/*
 		let req = http::Request::builder()
 			.method("GET")
-			.url("/db/:name")
+			.uri(format!("/db/{db_name}"))
 			.body(body::Body::empty())
 			.unwrap();
 		
 		let res = app.ready().await.unwrap().call(req).await.unwrap();
-		//assert_ne!(k
-		*/
+		let status = &res.status();
+		let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
+		assert_eq!(status, &http::StatusCode::OK);
+		assert_ne!(body_bytes.len(), 0);
 	}
 }
 

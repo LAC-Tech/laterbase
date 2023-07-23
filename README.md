@@ -1,5 +1,11 @@
 # Laterbase
 
+⚠️ **WORK IN PROGRESS** ⚠️
+
+*The following document describes my end goal. Check 'Roadmap' at the end to se where I'm actually at.*
+
+*Contributors and advice welcome!*
+
 ## Product Specifications
 
 ### Overview
@@ -9,6 +15,7 @@ A fast distributed event store, designed for high write availability even under 
 ### Target Users
 
 Users in industries where the domain is naturally eventful. (I'm primarily thinking of supply chain & logistics, but I'm sure there's others). Probably smaller outfits where the clumsiness of traditional ERPs is failing them. Logistics is an even more specific target, as they record more info "in the field" where network resiliency matters.
+
 
 ### Business Objectives:
 
@@ -48,6 +55,27 @@ Using ULIDs. Considered hybrid logical clocks but I don't need to capture causal
 
 Also considered UUIDv7s but the rust package situation was slightly more flakey. Should probably revisit this decision on the actual merits.
 
+##### Hybrid Logical Clocks: Reconsidered
+
+- Can query events in relation to physical time
+
+- Is always close to an NTP clock (standard 64 bit unix timestamp??)
+
+- Causality: e hb f => hlc.e < hlc.f, lc.e = lc.f => e || f, e hb f <=> vc.e < vc.f
+
+- Does not require a server-client architecture: which is good because I don't have one!
+
+- Works for a peer to peer node setup.
+
+- Monotonic, unlike NTP
+
+- Can "identify consistent snapshots in distributed databases". Unique indentifier??
+
+- "The goal of HLC is to provide one-way causality detection similar to that provided by LC, while maintaining the clock value to be always close to the physical/NTP clock."
+
+Are they unique? I don't think so.
+What problem would they solve for me?
+
 #### Event Value
 
 My first instinct was these should be arbitrary bytes, à la embedded key value stores.
@@ -84,14 +112,16 @@ Gets all the events a node *doesn't know about*.
 
 This is not the same as getting all events that have happened since a certain time, since it's possible to backdate events. They are however returned in order of their hybrid logical clocks.
 
-
-
 #### Bulk read arbitrary events
 
 ```
+
 ```
+
 GET /db/{db-name}/e?keys={key1, key2}
+
 ```
+
 ```
 
 Since the keys are ulids, keys are in crockfords base32 text format.
@@ -107,7 +137,6 @@ GET /{db-name}/{view-name}
 So many design decisions...
 
 When should they be added? In what language?
-
 
 Broadly I wish to utilise CouchDB style map-reduce views over events. 
 
@@ -139,7 +168,9 @@ Persist them on read. Reads are fast in LMDB, and we might as well insert on dem
 
 #### Why not Kafka?
 
-TODO:
+- Multi-master. No clients and servers.
+
+- Streams events are not designed for querying directly, that's what views are for.
 
 #### Why LMDB?
 
@@ -180,22 +211,37 @@ Not 100% that LMDB should be the server side backing store. But I like it becaus
 ## Roadmap
 
 - ~~G-Set in rust (copy JS version, but make it mutable)~~
+
 - ~~Delta state version. Make sure it passes tests~~
+
 - ~~Sorted version using sequential IDs~~
+
 - HTTP Server
+  
   - ~~Create new DB with POST request~~
   
-  - Factor out DB into its own file
+  - ~~Factor out DB into its own file~~
+
 - Add pre-compiled views at runtime
+
 - "State machine" stye arbiraries that simulate multiple merges
+
 - Simulate data loss of a node, and syncing again
+
 - Test backdating
+
 - Aggregate snapshot on read
+
 - Sync views??
+
 - Persistent storage using LMDB or similar
+
 - Factor out in-memory storage engine, make a trait
+
 - More tests with tokio-rs turmoil, or whatever works
+
 - ???
+
 - Profit
 
 ## References
