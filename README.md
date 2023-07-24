@@ -108,7 +108,6 @@ So many design decisions...
 
 When should they be added? In what language?
 
-
 Broadly I wish to utilise CouchDB style map-reduce views over events. 
 
 These 'reduce' over an immutable log of events
@@ -194,7 +193,7 @@ Not 100% that LMDB should be the server side backing store. But I like it becaus
 - Sync views??
 - Persistent storage using LMDB or similar
 - Factor out in-memory storage engine, make a trait
-- More tests with tokio-rs turmoil, or whatever works
+- More tests with tokio-rs turmoil (recommended on discord), or whatever works
 - ???
 - Profit
 

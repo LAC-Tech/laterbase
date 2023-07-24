@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)] // Try and be a good boy
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub trait Event: std::cmp::PartialEq + Clone + Send + std::marker::Sync {}
