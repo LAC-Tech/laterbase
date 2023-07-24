@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{de, Serialize};
 use axum::{extract, http, Json, response, Router, routing};
+use axum::extract::{Path, State, Query};
 
 mod db;
 mod view;
@@ -18,8 +19,8 @@ impl<V: db::Event> AppState<V> {
 }
 
 async fn create_db<V: db::Event>(
-	extract::Path(name): extract::Path<String>,
-	extract::State(mut state): extract::State<AppState<V>>
+	Path(name): Path<String>,
+	State(mut state): State<AppState<V>>
 ) -> impl response::IntoResponse {
 	state.dbs.insert(name, db::Mem::new());
     http::StatusCode::CREATED
@@ -31,17 +32,17 @@ struct BulkRead {
 }
 
 async fn db_info<E: db::Event>(
-	extract::Path(db_name): extract::Path<String>,
-	extract::State(state): extract::State<AppState<E>>
+	Path(db_name): Path<String>,
+	State(state): State<AppState<E>>
 ) -> Result<(http::StatusCode, axum::Json<db::Info>), http::StatusCode>  {
 	let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
 	Ok((http::StatusCode::CREATED, Json(db.info())))
 }
 
 async fn bulk_read<E: db::Event + Serialize>(
-	extract::Query(db_name): extract::Query<String>,
-	extract::Query(BulkRead {keys}): extract::Query<BulkRead>,
-	extract::State(state): extract::State<AppState<E>>
+	Query(db_name): Query<String>,
+	Query(BulkRead {keys}): Query<BulkRead>,
+	State(state): State<AppState<E>>
 ) -> Result<axum::Json<Vec<E>>, http::StatusCode> {
     let db = state.dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
     let events = db.get(&keys).cloned();
@@ -49,8 +50,8 @@ async fn bulk_read<E: db::Event + Serialize>(
 }
 
 async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
-	extract::State(mut state): extract::State<AppState<V>>,
-	extract::Query(db_name): extract::Query<String>,
+	State(mut state): State<AppState<V>>,
+	Query(db_name): Query<String>,
     Json(values): Json<Vec<V>>
 ) -> Result<axum::Json<Vec<db::Key>>, http::StatusCode> {
     let db = state.dbs.get_mut(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
