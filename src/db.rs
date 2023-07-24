@@ -16,8 +16,9 @@ impl VectorClock {
 		*self.0.get(&db_id).unwrap_or(&0)
 	}
 
-	fn update(&mut self, remote_id: Dbid, local_clock: usize) {
-		self.0.insert(remote_id, local_clock);
+	fn update(&mut self, remote_id: Dbid, n_events: usize) {
+		let lamport_clock = n_events.saturating_sub(1);
+		self.0.insert(remote_id, lamport_clock);
 	}
 }
 
@@ -101,8 +102,7 @@ impl<E: Event> Mem<E> {
 	) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
-		let logical_clock = self.changes.len().saturating_sub(1);
-		self.vector_clock.update(remote_id, logical_clock);
+		self.vector_clock.update(remote_id, self.changes.len());
 	}
 
 	fn keys_added_since_last_sync(&self, remote_id: Dbid) -> BTreeSet<Key> {
