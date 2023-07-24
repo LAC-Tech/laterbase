@@ -22,7 +22,7 @@ impl VectorClock {
 	}
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Info {
 	storage_engine: &'static str,
 	n_events: usize

@@ -111,8 +111,16 @@ mod tests {
 		let status = &res.status();
 
 		let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
+		let actual: serde_json::Value = 
+			serde_json::from_slice(&body_bytes).unwrap();
+
+		let expected = serde_json::json!({
+			"storage_engine": "memory",
+			"n_events": 0
+		});
 		assert_eq!(status, &http::StatusCode::OK);
-		assert_ne!(body_bytes.len(), 0);
+		assert_eq!(actual, expected);
+	
 	}
 }
 

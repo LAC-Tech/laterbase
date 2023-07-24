@@ -377,6 +377,7 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "serde",
+ "serde_json",
  "tokio",
  "tower",
  "ulid",
