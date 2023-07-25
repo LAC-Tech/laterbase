@@ -133,16 +133,51 @@ impl<E: Event> Mem<E> {
 			.collect()
 	}
 
-	pub fn merge(&mut self, remote: &mut Mem<E>) {
-		let local_ks = self.keys_added_since_last_sync(remote.id);
-		let remote_ks = remote.keys_added_since_last_sync(self.id);
+	pub fn init_sync(
+		&self, 
+		remote_id: Dbid, 
+		remote_keys_new: &BTreeSet<Key>
+	) -> SyncResponse<E> {
+		let local_keys_new = self.keys_added_since_last_sync(remote_id);
 
-		let missing_es = remote.missing_events(&remote_ks, &local_ks);
-		self.add_remote(remote.id, missing_es);
+		let missing_keys: BTreeSet<Key> = local_keys_new.
+			difference(remote_keys_new) 
+			.cloned()
+			.collect();
+		
+		let new_events: BTreeMap<Key, E> = 
+			self.missing_events(&local_keys_new, remote_keys_new);
 
-		let missing_es = self.missing_events(&local_ks, &remote_ks);	
-		remote.add_remote(self.id, missing_es);
+		SyncResponse { missing_keys, new_events }
 	}
+}
+
+// TODO: stupid name
+pub struct SyncResponse<E> {
+	pub missing_keys: BTreeSet<Key>,
+	pub new_events: BTreeMap<Key, E>
+}
+
+pub fn merge<E: Event>(local: &mut Mem<E>, remote: &mut Mem<E>) {
+	/*
+	let local_ks = local.keys_added_since_last_sync(remote.id);
+	let remote_ks = remote.keys_added_since_last_sync(local.id);
+
+	let missing_es = remote.missing_events(&remote_ks, &local_ks);
+	local.add_remote(remote.id, missing_es);
+
+	let missing_es = local.missing_events(&local_ks, &remote_ks);
+	remote.add_remote(local.id, missing_es);
+	*/
+
+	let local_keys_new = local.keys_added_since_last_sync(remote.id);
+	let remote_res = remote.init_sync(local.id, &local_keys_new);
+
+	local.add_remote(remote.id, remote_res.new_events);
+
+	remote.add_remote(
+		local.id, 
+		local.missing_events(&local_keys_new, &remote_res.missing_keys));
 }
 
 impl<V: Event> PartialEq for Mem<V> {
@@ -157,7 +192,7 @@ impl<V: Event> Eq for Mem<V> {}
 
 #[cfg(test)]
 mod tests {
-	use pretty_assertions::{assert_eq};
+	use pretty_assertions::assert_eq;
 
 	use super::*;
 	use proptest::prelude::*;
@@ -206,7 +241,7 @@ mod tests {
 
 		#[test]
 		fn idempotent((mut db1, mut db2) in arb_db_pairs()) {
-			db1.merge(&mut db2);
+			merge(&mut db1, &mut db2);
 			assert_eq!(db1, db2);
 		}
 
@@ -217,11 +252,11 @@ mod tests {
 			(mut db_left_b, mut db_right_b) in arb_db_pairs(),
 			(mut db_left_c, mut db_right_c) in arb_db_pairs()
 		) {
-			db_left_a.merge(&mut db_left_b);
-			db_left_a.merge(&mut db_left_c);
+			merge(&mut db_left_a, &mut db_left_b);
+			merge(&mut db_left_a, &mut db_left_c);
 
-			db_right_b.merge(&mut db_right_c);
-			db_right_a.merge(&mut db_right_b);
+			merge(&mut db_right_b, &mut db_right_c);
+			merge(&mut db_right_a, &mut db_right_b);
 
 			assert_eq!(db_left_a, db_right_a);
 		}
@@ -232,8 +267,8 @@ mod tests {
 			(mut db_left_a, mut db_right_a) in arb_db_pairs(), 
 			(mut db_left_b, mut db_right_b) in arb_db_pairs(),
 		) {
-			db_left_a.merge(&mut db_left_b);
-			db_right_b.merge(&mut db_right_a);
+			merge(&mut db_left_a, &mut db_left_b);
+			merge(&mut db_right_b, &mut db_right_a);
 
 			assert_eq!(db_left_a, db_right_b);
 		}

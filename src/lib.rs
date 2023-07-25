@@ -103,13 +103,15 @@ mod tests {
 	}
 
     async fn body<T: de::DeserializeOwned>(res: http::Response<BoxBody>) -> T {
-        let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
-        let reader = std::io::Cursor::new(body_bytes);
+        let reader = hyper::body::to_bytes(res.into_body()).await
+            .map(std::io::Cursor::new)
+            .unwrap();
+
         serde_json::from_reader(reader).unwrap()
     }
 
 	#[tokio::test]
-	async fn can_create_db() {
+	async fn basic_crud() {
 		let mut app = router::<i32>();
 		let db_name = "test"; // TODO: arbitrary
 
@@ -132,7 +134,7 @@ mod tests {
                 .body(Body::empty())
                 .unwrap();
             let res = result(&mut app, req).await;
-            let status = &res.status();
+            let status = res.status().clone();
 
             let actual: db::Info = body(res).await;
 
@@ -140,7 +142,7 @@ mod tests {
                 storage_engine: "memory".into(),
                 n_events: 0
             };
-            assert_eq!(status, &StatusCode::OK);
+            assert_eq!(status, StatusCode::OK);
             assert_eq!(actual, expected);
         }
 
@@ -156,10 +158,10 @@ mod tests {
                 .unwrap();
 
             let res = result(&mut app, req).await;
-            let status = &res.status();
+            let status = res.status().clone();
             let actual: HashSet<String> = body(res).await;
 	
-			assert_eq!(status, &StatusCode::CREATED);
+			assert_eq!(status, StatusCode::CREATED);
             assert_eq!(actual.len(), events.len());
         }
 	}
