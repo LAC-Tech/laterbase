@@ -65,12 +65,12 @@ async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
 	State(state): State<AppState<V>>,
 	Path(db_name): Path<String>,
     Json(values): Json<Vec<V>>
-) -> Result<axum::Json<Vec<String>>, http::StatusCode> {
+) -> Result<(http::StatusCode, axum::Json<Vec<String>>), http::StatusCode> {
     println!("\nhere\n");
 	let mut dbs = state.write_dbs();
 	let db = dbs.get_mut(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
     let new_keys = db.add_local(&values).iter().map(|k| k.to_string()).collect();
-    Ok(Json(new_keys))
+    Ok((http::StatusCode::CREATED, Json(new_keys)))
 }
 
 pub fn app<V: db::Event + Serialize + 'static + de::DeserializeOwned>() -> Router {
@@ -163,7 +163,8 @@ mod tests {
           
             let actual: HashSet<String> = 
                 serde_json::from_slice(&body_bytes).unwrap();
-
+	
+			assert_eq!(status, &StatusCode::CREATED);
             assert_eq!(actual.len(), 3);
         }
 	}
