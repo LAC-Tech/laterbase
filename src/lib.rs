@@ -90,50 +90,51 @@ mod tests {
 	use tower::Service; // for `call`
 	use tower::ServiceExt; // for `oneshot` and `ready`
 	
-	use axum::body;
+	use axum::body::{Body, BoxBody};
 	use axum::http::StatusCode;
 
     use std::collections::HashSet;
 	// Is the cure worse than the disease?
 	async fn result(
 		app: &mut axum::Router, 
-		req: http::Request<axum::body::Body>
-	) -> http::Response<axum::body::BoxBody> {
+		req: http::Request<Body>
+	) -> http::Response<BoxBody> {
 		app.ready().await.unwrap().call(req).await.unwrap()
 	}
+
+    async fn body<T: de::DeserializeOwned>(res: http::Response<BoxBody>) -> T {
+        let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
+        let reader = std::io::Cursor::new(body_bytes);
+        serde_json::from_reader(reader).unwrap()
+    }
 
 	#[tokio::test]
 	async fn can_create_db() {
 		let mut app = router::<i32>();
 		let db_name = "test"; // TODO: arbitrary
 
-		/*
-		 * Create a database
-		 */
+        // Create a database
         {
             let req = http::Request::builder()
                 .method("POST")
                 .uri(format!("/db/{db_name}"))
-				.body(body::Body::empty())
+				.body(Body::empty())
                 .unwrap();
             let res = result(&mut app, req).await;
             assert_eq!(res.status(), StatusCode::CREATED);
         }
-		/*
-		 * Confirm database has been created and is empty
-		 */
+		
+        // Confirm database has been created and is empty
         {
             let req = http::Request::builder()
                 .method("GET")
                 .uri(format!("/db/{db_name}"))
-                .body(body::Body::empty())
+                .body(Body::empty())
                 .unwrap();
             let res = result(&mut app, req).await;
             let status = &res.status();
 
-            let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
-            let actual: db::Info = 
-                serde_json::from_slice(&body_bytes).unwrap();
+            let actual: db::Info = body(res).await;
 
             let expected = db::Info{
                 storage_engine: "memory".into(),
@@ -142,9 +143,8 @@ mod tests {
             assert_eq!(status, &StatusCode::OK);
             assert_eq!(actual, expected);
         }
-		/*
-		 * Write events to db
-		 */
+
+        // Write events to db
         {
             let events = vec![1, 2, 3];
             
@@ -152,18 +152,12 @@ mod tests {
                 .method("PUT")
                 .uri(format!("/db/{db_name}/e"))
                 .header(http::header::CONTENT_TYPE, "application/json")
-                .body(body::Body::from(
-                    serde_json::to_vec(&events).unwrap()
-                ))
+                .body(Body::from(serde_json::to_vec(&events).unwrap()))
                 .unwrap();
 
             let res = result(&mut app, req).await;
             let status = &res.status();
-
-            let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
-          
-            let actual: HashSet<String> = 
-                serde_json::from_slice(&body_bytes).unwrap();
+            let actual: HashSet<String> = body(res).await;
 	
 			assert_eq!(status, &StatusCode::CREATED);
             assert_eq!(actual.len(), events.len());
