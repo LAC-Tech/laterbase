@@ -16,7 +16,6 @@ A fast distributed event store, designed for high write availability even under 
 
 Users in industries where the domain is naturally eventful. (I'm primarily thinking of supply chain & logistics, but I'm sure there's others). Probably smaller outfits where the clumsiness of traditional ERPs is failing them. Logistics is an even more specific target, as they record more info "in the field" where network resiliency matters.
 
-
 ### Business Objectives:
 
 - Improve supply chain and logistics operational efficiency.
@@ -39,6 +38,19 @@ erDiagram
     SERVER ||--|{ DB : accesses
     DB ||--|| EVENT-STREAM : stores
     DB ||--o{ VIEW : has
+```
+
+### Sync Protocol
+
+```mermaid
+sequenceDiagram
+    participant Local
+    participant Remote
+    Local->>Remote: IDs added since last sync
+    Remote->>Local: Subset of those IDs remote doesn't have, IDs added since last sync.
+    Local->>Remote: Events matching those ID's. Subset of IDs local doesn't have.
+    Remote->>Local: Events matching those ID's.
+
 ```
 
 ### Data Formats
@@ -221,6 +233,10 @@ Not 100% that LMDB should be the server side backing store. But I like it becaus
   - ~~Create new DB with POST request~~
   
   - ~~Factor out DB into its own file~~
+  
+  - ~~Create DB, write events, read events back~~
+  
+  - replicate tests in db module
 
 - Add pre-compiled views at runtime
 

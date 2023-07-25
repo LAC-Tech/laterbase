@@ -73,7 +73,7 @@ async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
     Ok((http::StatusCode::CREATED, Json(new_keys)))
 }
 
-pub fn app<V: db::Event + Serialize + 'static + de::DeserializeOwned>() -> Router {
+pub fn router<V: db::Event + Serialize + 'static + de::DeserializeOwned>() -> Router {
 	Router::new()
 		 .route("/db/:name", routing::post(create_db::<V>))
 		 .route("/db/:name", routing::get(db_info::<V>))
@@ -104,7 +104,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn can_create_db() {
-		let mut app = app::<i32>();
+		let mut app = router::<i32>();
 		let db_name = "test"; // TODO: arbitrary
 
 		/*
@@ -113,7 +113,8 @@ mod tests {
         {
             let req = http::Request::builder()
                 .method("POST")
-                .uri(format!("/db/{db_name}")) .body(body::Body::empty())
+                .uri(format!("/db/{db_name}"))
+				.body(body::Body::empty())
                 .unwrap();
             let res = result(&mut app, req).await;
             assert_eq!(res.status(), StatusCode::CREATED);
@@ -165,7 +166,7 @@ mod tests {
                 serde_json::from_slice(&body_bytes).unwrap();
 	
 			assert_eq!(status, &StatusCode::CREATED);
-            assert_eq!(actual.len(), 3);
+            assert_eq!(actual.len(), events.len());
         }
 	}
 }
