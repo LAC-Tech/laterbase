@@ -159,25 +159,16 @@ pub struct SyncResponse<E> {
 }
 
 pub fn merge<E: Event>(local: &mut Mem<E>, remote: &mut Mem<E>) {
-	/*
-	let local_ks = local.keys_added_since_last_sync(remote.id);
-	let remote_ks = remote.keys_added_since_last_sync(local.id);
-
-	let missing_es = remote.missing_events(&remote_ks, &local_ks);
-	local.add_remote(remote.id, missing_es);
-
-	let missing_es = local.missing_events(&local_ks, &remote_ks);
-	remote.add_remote(local.id, missing_es);
-	*/
-
 	let local_keys_new = local.keys_added_since_last_sync(remote.id);
-	let remote_res = remote.init_sync(local.id, &local_keys_new);
+	let remote_sync_res = remote.init_sync(local.id, &local_keys_new);
 
-	local.add_remote(remote.id, remote_res.new_events);
+	local.add_remote(remote.id, remote_sync_res.new_events);
+	let remote_events_new = local.missing_events(
+		&local_keys_new,
+		&remote_sync_res.missing_keys
+	);
 
-	remote.add_remote(
-		local.id, 
-		local.missing_events(&local_keys_new, &remote_res.missing_keys));
+	remote.add_remote(local.id, remote_events_new);
 }
 
 impl<V: Event> PartialEq for Mem<V> {
