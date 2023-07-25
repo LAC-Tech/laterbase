@@ -141,7 +141,7 @@ mod tests {
 		/*
 		 * Write events to db
 		 */
-		let events = [1, 2, 3];
+		let events = vec![1, 2, 3];
 		
 		let req = http::Request::builder()
 			.method("PUT")
@@ -153,7 +153,12 @@ mod tests {
 
 		let res = result(&mut app, req).await;
 		let status = &res.status();
-		assert_eq!(status, &StatusCode::CREATED);
+		
+		let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
+        
+        let actual = String::from_utf8(body_bytes.into()).unwrap();
+        assert_eq!(actual, "lol");
+        //assert_eq!(status, &StatusCode::CREATED);
 	}
 }
 
