@@ -66,7 +66,8 @@ async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
 	Query(db_name): Query<String>,
     Json(values): Json<Vec<V>>
 ) -> Result<axum::Json<Vec<db::Key>>, http::StatusCode> {
-    let mut dbs = state.write_dbs();
+    println!("\nhere\n");
+	let mut dbs = state.write_dbs();
 	let db = dbs.get_mut(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
     let new_keys = db.add_local(&values);
     Ok(Json(new_keys))
@@ -76,15 +77,15 @@ pub fn app<V: db::Event + Serialize + 'static + de::DeserializeOwned>() -> Route
 	Router::new()
 		 .route("/db/:name", routing::post(create_db::<V>))
 		 .route("/db/:name", routing::get(db_info::<V>))
+		 .route("/db/:name/e", routing::put(bulk_write::<V>))
 		 .route("/db/:name/e/:args", routing::get(bulk_read::<V>))
-		 .route("/db/:name/e", routing::post(bulk_write::<V>))
          .with_state(AppState::new())
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use pretty_assertions::{assert_eq, assert_ne};
+	use pretty_assertions::assert_eq;
 	
 	use tower::Service; // for `call`
 	use tower::ServiceExt; // for `oneshot` and `ready`
@@ -92,28 +93,38 @@ mod tests {
 	use axum::body;
 	use axum::http::StatusCode;
 
+	// Is the cure worse than the disease?
+	async fn result(
+		app: &mut axum::Router, 
+		req: http::Request<axum::body::Body>
+	) -> http::Response<axum::body::BoxBody> {
+		app.ready().await.unwrap().call(req).await.unwrap()
+	}
+
 	#[tokio::test]
 	async fn can_create_db() {
 		let mut app = app::<i32>();
-		
-		let db_name = "test";
+		let db_name = "test"; // TODO: arbitrary
 
+		/*
+		 * Create a database
+		 */
 		let req = http::Request::builder()
 			.method("POST")
-			.uri(format!("/db/{db_name}"))
-			.body(body::Body::empty())
+			.uri(format!("/db/{db_name}")) .body(body::Body::empty())
 			.unwrap();
-		let res = app.ready().await.unwrap().call(req).await.unwrap();
+		let res = result(&mut app, req).await;
 		assert_eq!(res.status(), StatusCode::CREATED);
 
+		/*
+		 * Confirm database has been created and is empty
+		 */
 		let req = http::Request::builder()
 			.method("GET")
 			.uri(format!("/db/{db_name}"))
 			.body(body::Body::empty())
 			.unwrap();
-		
-		// Thread local heap allocated bytes from a body
-		let res = app.ready().await.unwrap().call(req).await.unwrap();
+		let res = result(&mut app, req).await;
 		let status = &res.status();
 
 		let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
@@ -126,7 +137,23 @@ mod tests {
 		});
 		assert_eq!(status, &StatusCode::OK);
 		assert_eq!(actual, expected);
-	}
 
+		/*
+		 * Write events to db
+		 */
+		let events = [1, 2, 3];
+		
+		let req = http::Request::builder()
+			.method("PUT")
+			.uri(format!("/db/{db_name}/e"))
+			.body(body::Body::from(
+				serde_json::to_vec(&events).unwrap()
+			))
+			.unwrap();
+
+		let res = result(&mut app, req).await;
+		let status = &res.status();
+		assert_eq!(status, &StatusCode::CREATED);
+	}
 }
 
