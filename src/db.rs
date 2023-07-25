@@ -22,10 +22,10 @@ impl VectorClock {
 	}
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Info {
-	storage_engine: &'static str,
-	n_events: usize
+	pub storage_engine: String,
+	pub n_events: usize
 }
 
 /*
@@ -54,6 +54,13 @@ impl Key {
 	}
 }
 
+impl std::fmt::Display for Key {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.ulid)
+	}
+}
+
+
 type Dbid = uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -75,7 +82,7 @@ impl<E: Event> Mem<E> {
 	}
 
 	pub fn info(&self) -> Info {
-		Info{ storage_engine: "memory", n_events: self.events.len() }
+		Info{ storage_engine: "memory".into(), n_events: self.events.len() }
 	}
 
 	pub fn add_local(&mut self, es: &[E]) -> Vec<Key> {

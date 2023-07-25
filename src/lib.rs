@@ -63,13 +63,13 @@ async fn bulk_read<E: db::Event + Serialize>(
 
 async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
 	State(state): State<AppState<V>>,
-	Query(db_name): Query<String>,
+	Path(db_name): Path<String>,
     Json(values): Json<Vec<V>>
-) -> Result<axum::Json<Vec<db::Key>>, http::StatusCode> {
+) -> Result<axum::Json<Vec<String>>, http::StatusCode> {
     println!("\nhere\n");
 	let mut dbs = state.write_dbs();
 	let db = dbs.get_mut(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
-    let new_keys = db.add_local(&values);
+    let new_keys = db.add_local(&values).iter().map(|k| k.to_string()).collect();
     Ok(Json(new_keys))
 }
 
@@ -93,6 +93,7 @@ mod tests {
 	use axum::body;
 	use axum::http::StatusCode;
 
+    use std::collections::HashSet;
 	// Is the cure worse than the disease?
 	async fn result(
 		app: &mut axum::Router, 
@@ -109,56 +110,62 @@ mod tests {
 		/*
 		 * Create a database
 		 */
-		let req = http::Request::builder()
-			.method("POST")
-			.uri(format!("/db/{db_name}")) .body(body::Body::empty())
-			.unwrap();
-		let res = result(&mut app, req).await;
-		assert_eq!(res.status(), StatusCode::CREATED);
-
+        {
+            let req = http::Request::builder()
+                .method("POST")
+                .uri(format!("/db/{db_name}")) .body(body::Body::empty())
+                .unwrap();
+            let res = result(&mut app, req).await;
+            assert_eq!(res.status(), StatusCode::CREATED);
+        }
 		/*
 		 * Confirm database has been created and is empty
 		 */
-		let req = http::Request::builder()
-			.method("GET")
-			.uri(format!("/db/{db_name}"))
-			.body(body::Body::empty())
-			.unwrap();
-		let res = result(&mut app, req).await;
-		let status = &res.status();
+        {
+            let req = http::Request::builder()
+                .method("GET")
+                .uri(format!("/db/{db_name}"))
+                .body(body::Body::empty())
+                .unwrap();
+            let res = result(&mut app, req).await;
+            let status = &res.status();
 
-		let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
-		let actual: serde_json::Value = 
-			serde_json::from_slice(&body_bytes).unwrap();
+            let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
+            let actual: db::Info = 
+                serde_json::from_slice(&body_bytes).unwrap();
 
-		let expected = serde_json::json!({
-			"storage_engine": "memory",
-			"n_events": 0
-		});
-		assert_eq!(status, &StatusCode::OK);
-		assert_eq!(actual, expected);
-
+            let expected = db::Info{
+                storage_engine: "memory".into(),
+                n_events: 0
+            };
+            assert_eq!(status, &StatusCode::OK);
+            assert_eq!(actual, expected);
+        }
 		/*
 		 * Write events to db
 		 */
-		let events = vec![1, 2, 3];
-		
-		let req = http::Request::builder()
-			.method("PUT")
-			.uri(format!("/db/{db_name}/e"))
-			.body(body::Body::from(
-				serde_json::to_vec(&events).unwrap()
-			))
-			.unwrap();
+        {
+            let events = vec![1, 2, 3];
+            
+            let req = http::Request::builder()
+                .method("PUT")
+                .uri(format!("/db/{db_name}/e"))
+                .header(http::header::CONTENT_TYPE, "application/json")
+                .body(body::Body::from(
+                    serde_json::to_vec(&events).unwrap()
+                ))
+                .unwrap();
 
-		let res = result(&mut app, req).await;
-		let status = &res.status();
-		
-		let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
-        
-        let actual = String::from_utf8(body_bytes.into()).unwrap();
-        assert_eq!(actual, "lol");
-        //assert_eq!(status, &StatusCode::CREATED);
+            let res = result(&mut app, req).await;
+            let status = &res.status();
+
+            let body_bytes = hyper::body::to_bytes(res.into_body()).await.unwrap();
+          
+            let actual: HashSet<String> = 
+                serde_json::from_slice(&body_bytes).unwrap();
+
+            assert_eq!(actual.len(), 3);
+        }
 	}
 }
 
