@@ -79,8 +79,8 @@ async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
 	Ok((http::StatusCode::CREATED, Json(new_keys)))
 }
 
-pub fn router<V: db::Event + Serialize + 'static + de::DeserializeOwned>(
-) -> Router {
+pub fn router<V>() -> Router 
+where V: db::Event + Serialize + 'static + de::DeserializeOwned  {
 	Router::new()
 		.route("/db/:name", routing::post(create_db::<V>))
 		.route("/db/:name", routing::get(db_info::<V>))
