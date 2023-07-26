@@ -15,5 +15,6 @@ hyper = { version = "0.14", features = ["full"] }
 pretty_assertions = "1.4.0"
 proptest = "1.0.0"
 serde_json = "1.0.103"
+test-strategy = "0.3.1"
 tokio = { version = "1.0", features = ["full"] }
 tower = { version = "0.4", features = ["util"] }

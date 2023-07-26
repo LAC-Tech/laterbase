@@ -93,7 +93,9 @@ mod tests {
 	use axum::body::{Body, BoxBody};
 	use axum::http::StatusCode;
 
+    use proptest::prelude::*;
     use std::collections::HashSet;
+    
 	// Is the cure worse than the disease?
 	async fn result(
 		app: &mut axum::Router, 
@@ -110,22 +112,32 @@ mod tests {
         serde_json::from_reader(reader).unwrap()
     }
 
-	#[tokio::test]
-	async fn basic_crud() {
-		let mut app = router::<i32>();
-		let db_name = "test"; // TODO: arbitrary
+    fn url_safe_string() -> impl Strategy<Value = String> {
+        proptest::string::string_regex("[A-Za-z0-9\\-_\\.~]+").unwrap()
+    }
+
+    fn random_int_array() -> impl Strategy<Value = Vec<i32>> {
+        proptest::collection::vec(proptest::num::i32::ANY, 0..=100)
+    }
+
+    use test_strategy::proptest;
+
+    #[proptest(async = "tokio")]
+    async fn basic_crud(#[strategy(url_safe_string())] db_name: String) {
+        let mut app = router::<i32>();
 
         // Create a database
         {
             let req = http::Request::builder()
                 .method("POST")
                 .uri(format!("/db/{db_name}"))
-				.body(Body::empty())
+                .body(Body::empty())
                 .unwrap();
+
             let res = result(&mut app, req).await;
             assert_eq!(res.status(), StatusCode::CREATED);
         }
-		
+        
         // Confirm database has been created and is empty
         {
             let req = http::Request::builder()
@@ -160,10 +172,10 @@ mod tests {
             let res = result(&mut app, req).await;
             let status = res.status().clone();
             let actual: HashSet<String> = body(res).await;
-	
-			assert_eq!(status, StatusCode::CREATED);
+    
+            assert_eq!(status, StatusCode::CREATED);
             assert_eq!(actual.len(), events.len());
         }
-	}
+    }
 }
 

@@ -77,7 +77,6 @@ impl<E: Event> Mem<E> {
 		let events = BTreeMap::new();
 		let changes = vec![];
 		let vector_clock = VectorClock::new();
-		//let views = std::collections::HashMap::new();
 		Self {id, events, changes, vector_clock}
 	}
 
