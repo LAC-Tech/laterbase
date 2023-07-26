@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)] // Try and be a good boy
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-pub trait Event: std::cmp::PartialEq + Clone + Send + std::marker::Sync {}
+pub trait Event:
+	std::cmp::PartialEq + Clone + Send + std::marker::Sync
+{
+}
 impl<T: PartialEq + Clone + Send + std::marker::Sync> Event for T {}
 
 #[derive(Clone, Debug)]
@@ -33,7 +36,15 @@ pub struct Info {
  * maybe it's related to all of these things I'm deriving...
  */
 #[derive(
-	Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord, serde::Serialize, serde::Deserialize,
+	Clone,
+	Copy,
+	Debug,
+	PartialEq,
+	PartialOrd,
+	Eq,
+	Ord,
+	serde::Serialize,
+	serde::Deserialize,
 )]
 pub struct Key {
 	#[serde(with = "ulid::serde::ulid_as_u128")]
@@ -131,7 +142,11 @@ impl<E: Event> Mem<E> {
 			.collect()
 	}
 
-	pub fn init_sync(&self, remote_id: Dbid, remote_keys_new: &BTreeSet<Key>) -> SyncResponse<E> {
+	pub fn init_sync(
+		&self,
+		remote_id: Dbid,
+		remote_keys_new: &BTreeSet<Key>,
+	) -> SyncResponse<E> {
 		let local_keys_new = self.keys_added_since_last_sync(remote_id);
 
 		let missing_keys: BTreeSet<Key> = local_keys_new
@@ -139,7 +154,8 @@ impl<E: Event> Mem<E> {
 			.cloned()
 			.collect();
 
-		let new_events: BTreeMap<Key, E> = self.missing_events(&local_keys_new, remote_keys_new);
+		let new_events: BTreeMap<Key, E> =
+			self.missing_events(&local_keys_new, remote_keys_new);
 
 		SyncResponse {
 			missing_keys,
@@ -159,7 +175,8 @@ pub fn merge<E: Event>(local: &mut Mem<E>, remote: &mut Mem<E>) {
 	let remote_sync_res = remote.init_sync(local.id, &local_keys_new);
 
 	local.add_remote(remote.id, remote_sync_res.new_events);
-	let remote_events_new = local.missing_events(&local_keys_new, &remote_sync_res.missing_keys);
+	let remote_events_new =
+		local.missing_events(&local_keys_new, &remote_sync_res.missing_keys);
 
 	remote.add_remote(local.id, remote_events_new);
 }

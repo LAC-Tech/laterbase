@@ -79,7 +79,8 @@ async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
 	Ok((http::StatusCode::CREATED, Json(new_keys)))
 }
 
-pub fn router<V: db::Event + Serialize + 'static + de::DeserializeOwned>() -> Router {
+pub fn router<V: db::Event + Serialize + 'static + de::DeserializeOwned>(
+) -> Router {
 	Router::new()
 		.route("/db/:name", routing::post(create_db::<V>))
 		.route("/db/:name", routing::get(db_info::<V>))
@@ -102,7 +103,10 @@ mod tests {
 	use proptest::prelude::*;
 	use std::collections::HashSet;
 
-	async fn result(app: &mut axum::Router, req: http::Request<Body>) -> http::Response<BoxBody> {
+	async fn result(
+		app: &mut axum::Router,
+		req: http::Request<Body>,
+	) -> http::Response<BoxBody> {
 		app.ready().await.unwrap().call(req).await.unwrap()
 	}
 

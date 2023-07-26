@@ -86,7 +86,8 @@ mod test {
 				.get(&id)
 				.map(|existing_average| {
 					let mean_accum: MeanAccum =
-						bincode::deserialize(existing_average.as_slice()).unwrap();
+						bincode::deserialize(existing_average.as_slice())
+							.unwrap();
 
 					mean_accum.add(event.celcius)
 				})
@@ -110,7 +111,8 @@ mod test {
 		})
 		.unwrap();
 
-		let expected: Option<MeanAccum> = Some(bincode::deserialize(&expected).unwrap());
+		let expected: Option<MeanAccum> =
+			Some(bincode::deserialize(&expected).unwrap());
 
 		let actual: Option<MeanAccum> = running_average
 			.get(&id)
