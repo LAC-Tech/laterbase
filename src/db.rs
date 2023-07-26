@@ -25,7 +25,7 @@ impl VectorClock {
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Info {
 	pub storage_engine: String,
-	pub n_events: usize
+	pub n_events: usize,
 }
 
 /*
@@ -33,24 +33,18 @@ pub struct Info {
  * maybe it's related to all of these things I'm deriving...
  */
 #[derive(
-	Clone,
-	Copy,
-	Debug,
-	PartialEq,
-	PartialOrd,
-	Eq,
-	Ord,
-	serde::Serialize,
-	serde::Deserialize,
+	Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord, serde::Serialize, serde::Deserialize,
 )]
 pub struct Key {
 	#[serde(with = "ulid::serde::ulid_as_u128")]
-	ulid: ulid::Ulid
+	ulid: ulid::Ulid,
 }
 
 impl Key {
 	fn new() -> Self {
-		Self { ulid: ulid::Ulid::new() }
+		Self {
+			ulid: ulid::Ulid::new(),
+		}
 	}
 }
 
@@ -59,7 +53,6 @@ impl std::fmt::Display for Key {
 		write!(f, "{}", self.ulid)
 	}
 }
-
 
 type Dbid = uuid::Uuid;
 
@@ -77,11 +70,19 @@ impl<E: Event> Mem<E> {
 		let events = BTreeMap::new();
 		let changes = vec![];
 		let vector_clock = VectorClock::new();
-		Self {id, events, changes, vector_clock}
+		Self {
+			id,
+			events,
+			changes,
+			vector_clock,
+		}
 	}
 
 	pub fn info(&self) -> Info {
-		Info{ storage_engine: "memory".into(), n_events: self.events.len() }
+		Info {
+			storage_engine: "memory".into(),
+			n_events: self.events.len(),
+		}
 	}
 
 	pub fn add_local(&mut self, es: &[E]) -> Vec<Key> {
@@ -101,11 +102,7 @@ impl<E: Event> Mem<E> {
 		ks.iter().filter_map(|k| self.events.get(k))
 	}
 
-	fn add_remote(
-		&mut self, 
-		remote_id: Dbid, 
-		remote_events: BTreeMap<Key, E>
-	) {
+	fn add_remote(&mut self, remote_id: Dbid, remote_events: BTreeMap<Key, E>) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
 		self.vector_clock.update(remote_id, self.changes.len());
@@ -119,11 +116,13 @@ impl<E: Event> Mem<E> {
 	fn missing_events(
 		&self,
 		local_ks: &BTreeSet<Key>,
-		remote_ks: &BTreeSet<Key>
+		remote_ks: &BTreeSet<Key>,
 	) -> BTreeMap<Key, E> {
-		local_ks.difference(remote_ks)
+		local_ks
+			.difference(remote_ks)
 			.map(|remote_key| {
-				let event = self.events
+				let event = self
+					.events
 					.get(remote_key)
 					.expect("database to be consistent");
 
@@ -132,29 +131,27 @@ impl<E: Event> Mem<E> {
 			.collect()
 	}
 
-	pub fn init_sync(
-		&self, 
-		remote_id: Dbid, 
-		remote_keys_new: &BTreeSet<Key>
-	) -> SyncResponse<E> {
+	pub fn init_sync(&self, remote_id: Dbid, remote_keys_new: &BTreeSet<Key>) -> SyncResponse<E> {
 		let local_keys_new = self.keys_added_since_last_sync(remote_id);
 
-		let missing_keys: BTreeSet<Key> = local_keys_new.
-			difference(remote_keys_new) 
+		let missing_keys: BTreeSet<Key> = local_keys_new
+			.difference(remote_keys_new)
 			.cloned()
 			.collect();
-		
-		let new_events: BTreeMap<Key, E> = 
-			self.missing_events(&local_keys_new, remote_keys_new);
 
-		SyncResponse { missing_keys, new_events }
+		let new_events: BTreeMap<Key, E> = self.missing_events(&local_keys_new, remote_keys_new);
+
+		SyncResponse {
+			missing_keys,
+			new_events,
+		}
 	}
 }
 
 // TODO: stupid name
 pub struct SyncResponse<E> {
 	pub missing_keys: BTreeSet<Key>,
-	pub new_events: BTreeMap<Key, E>
+	pub new_events: BTreeMap<Key, E>,
 }
 
 pub fn merge<E: Event>(local: &mut Mem<E>, remote: &mut Mem<E>) {
@@ -162,10 +159,7 @@ pub fn merge<E: Event>(local: &mut Mem<E>, remote: &mut Mem<E>) {
 	let remote_sync_res = remote.init_sync(local.id, &local_keys_new);
 
 	local.add_remote(remote.id, remote_sync_res.new_events);
-	let remote_events_new = local.missing_events(
-		&local_keys_new,
-		&remote_sync_res.missing_keys
-	);
+	let remote_events_new = local.missing_events(&local_keys_new, &remote_sync_res.missing_keys);
 
 	remote.add_remote(local.id, remote_events_new);
 }
@@ -238,7 +232,7 @@ mod tests {
 		// (a . b) . c = a . (b . c)
 		#[test]
 		fn associative(
-			(mut db_left_a, mut db_right_a) in arb_db_pairs(), 
+			(mut db_left_a, mut db_right_a) in arb_db_pairs(),
 			(mut db_left_b, mut db_right_b) in arb_db_pairs(),
 			(mut db_left_c, mut db_right_c) in arb_db_pairs()
 		) {
@@ -250,11 +244,11 @@ mod tests {
 
 			assert_eq!(db_left_a, db_right_a);
 		}
-		
+
 		// a . b = b . a
 		#[test]
 		fn commutative(
-			(mut db_left_a, mut db_right_a) in arb_db_pairs(), 
+			(mut db_left_a, mut db_right_a) in arb_db_pairs(),
 			(mut db_left_b, mut db_right_b) in arb_db_pairs(),
 		) {
 			merge(&mut db_left_a, &mut db_left_b);
@@ -264,4 +258,3 @@ mod tests {
 		}
 	}
 }
-

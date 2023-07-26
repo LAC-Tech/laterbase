@@ -1,10 +1,10 @@
-type ViewData = std::collections::BTreeMap<Vec<u8>, Vec<u8>>; 
+type ViewData = std::collections::BTreeMap<Vec<u8>, Vec<u8>>;
 type ViewFn = fn(&ViewData, &[u8]) -> ViewData;
 
 #[derive(Clone)]
 pub struct View {
 	data: ViewData,
-	f: ViewFn
+	f: ViewFn,
 }
 
 impl View {
@@ -26,11 +26,9 @@ impl View {
 }
 
 impl std::fmt::Debug for View {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("View")
-            .field("btree", &self.data)
-            .finish()
-    }
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("View").field("btree", &self.data).finish()
+	}
 }
 
 #[cfg(test)]
@@ -40,13 +38,13 @@ mod test {
 	#[derive(Debug, serde::Serialize, serde::Deserialize)]
 	struct TempReading {
 		location: String,
-		celcius: f32
+		celcius: f32,
 	}
 
 	#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 	struct MeanAccum {
 		count: usize,
-		mean: f32
+		mean: f32,
 	}
 
 	impl MeanAccum {
@@ -58,7 +56,10 @@ mod test {
 		}
 
 		fn new(first_elem: f32) -> Self {
-			Self { count: 1, mean: first_elem }
+			Self {
+				count: 1,
+				mean: first_elem,
+			}
 		}
 	}
 
@@ -69,25 +70,27 @@ mod test {
 			("b", 12.0),
 			("c", 34.0),
 			("a", 13.0),
-			("b", -34.0)
-		].map(|(location, celcius)| TempReading { 
+			("b", -34.0),
+		]
+		.map(|(location, celcius)| TempReading {
 			location: location.to_string(),
-			celcius
+			celcius,
 		});
-	
+
 		let mut running_average = View::new(|accum, event| {
 			let mut result = ViewData::new();
 			let event: TempReading = bincode::deserialize(event).unwrap();
-		
-			let id = bincode::serialize(&event.location).unwrap();
-			let mean_accum: MeanAccum = accum.get(&id).map(|existing_average| {
-				let mean_accum: MeanAccum = 
-					bincode::deserialize(existing_average.as_slice()).unwrap();
-			
-				mean_accum.add(event.celcius)
 
-			})
-			.unwrap_or(MeanAccum::new(event.celcius));
+			let id = bincode::serialize(&event.location).unwrap();
+			let mean_accum: MeanAccum = accum
+				.get(&id)
+				.map(|existing_average| {
+					let mean_accum: MeanAccum =
+						bincode::deserialize(existing_average.as_slice()).unwrap();
+
+					mean_accum.add(event.celcius)
+				})
+				.unwrap_or(MeanAccum::new(event.celcius));
 
 			let val = bincode::serialize(&mean_accum).unwrap();
 
@@ -101,11 +104,13 @@ mod test {
 		}
 
 		let id: Vec<u8> = bincode::serialize("a").unwrap();
-		let expected: Vec<u8> = bincode::serialize(
-			&MeanAccum{count: 2, mean: 16.5 as f32}).unwrap();
+		let expected: Vec<u8> = bincode::serialize(&MeanAccum {
+			count: 2,
+			mean: 16.5 as f32,
+		})
+		.unwrap();
 
-        let expected: Option<MeanAccum> = 
-            Some(bincode::deserialize(&expected).unwrap());
+		let expected: Option<MeanAccum> = Some(bincode::deserialize(&expected).unwrap());
 
 		let actual: Option<MeanAccum> = running_average
 			.get(&id)
