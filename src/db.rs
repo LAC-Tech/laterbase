@@ -7,24 +7,6 @@ pub trait Event:
 }
 impl<T: PartialEq + Clone + Send + std::marker::Sync> Event for T {}
 
-#[derive(Clone, Debug)]
-struct VectorClock(HashMap<Dbid, usize>);
-
-impl VectorClock {
-	fn new() -> Self {
-		Self(HashMap::new())
-	}
-
-	fn get(&self, db_id: Dbid) -> usize {
-		*self.0.get(&db_id).unwrap_or(&0)
-	}
-
-	fn update(&mut self, remote_id: Dbid, n_events: usize) {
-		let lamport_clock = n_events.saturating_sub(1);
-		self.0.insert(remote_id, lamport_clock);
-	}
-}
-
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Info {
 	pub storage_engine: String,
@@ -72,7 +54,7 @@ pub struct Mem<E> {
 	id: Dbid,
 	events: BTreeMap<Key, E>,
 	changes: Vec<Key>,
-	vector_clock: VectorClock,
+	vector_clock: HashMap<Dbid, usize>,
 }
 
 impl<E: Event> Mem<E> {
@@ -80,7 +62,7 @@ impl<E: Event> Mem<E> {
 		let id = uuid::Uuid::new_v4();
 		let events = BTreeMap::new();
 		let changes = vec![];
-		let vector_clock = VectorClock::new();
+		let vector_clock = HashMap::new();
 		Self {
 			id,
 			events,
@@ -116,12 +98,15 @@ impl<E: Event> Mem<E> {
 	fn add_remote(&mut self, remote_id: Dbid, remote_events: BTreeMap<Key, E>) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
-		self.vector_clock.update(remote_id, self.changes.len());
+		let lamport_clock = self.changes.len().saturating_sub(1);
+		self.vector_clock.insert(remote_id, lamport_clock);
 	}
 
 	fn keys_added_since_last_sync(&self, remote_id: Dbid) -> BTreeSet<Key> {
-		let logical_clock = self.vector_clock.get(remote_id);
-		self.changes[logical_clock..].iter().cloned().collect()
+		let lamport_clock = self.vector_clock.get(&remote_id);
+		// default to 0 if we don't yet have an entry
+		let lamport_clock = *lamport_clock.unwrap_or(&0);
+		self.changes[lamport_clock..].iter().cloned().collect()
 	}
 
 	fn missing_events(
@@ -223,12 +208,6 @@ mod tests {
 
 			(db1, db2)
 		})
-	}
-
-	#[test]
-	fn query_empty_vector_clock() {
-		let vc = VectorClock::new();
-		assert_eq!(vc.get(uuid::Uuid::new_v4()), 0);
 	}
 
 	proptest! {
