@@ -68,7 +68,6 @@ async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
 	Path(db_name): Path<String>,
 	Json(values): Json<Vec<V>>,
 ) -> Result<(http::StatusCode, axum::Json<Vec<String>>), http::StatusCode> {
-	println!("\nhere\n");
 	let mut dbs = state.write_dbs();
 	let db = dbs.get_mut(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
 	let new_keys = db
