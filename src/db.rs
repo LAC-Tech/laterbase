@@ -116,13 +116,9 @@ impl<E: Event> Mem<E> {
 	) -> BTreeMap<Key, E> {
 		local_ks
 			.difference(remote_ks)
-			.map(|remote_key| {
-				let event = self
-					.events
-					.get(remote_key)
-					.expect("database to be consistent");
-
-				(*remote_key, event.clone())
+			.map(|k| {
+				let e = self.events.get(k).expect("database to be consistent");
+				(*k, e.clone())
 			})
 			.collect()
 	}
