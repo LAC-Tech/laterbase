@@ -12,18 +12,43 @@ commit cbc390cdf94973ade9a6a287b4ea07c8a1c51bc0
 
 - Determines how many replicas, standbys and clients there will be.
 
-### Cluster
+### Options
 
 ```mermaid
 erDiagram
-    Cluster ||--|| Network
-    Cluster ||--|| Storage
-    Cluster ||--|| State Machine
+    simulator ||--|| cluster : ""
+    simulator ||--|| replica : ""
+    replica { 
+        float crash-probability 
+        uint crash-stability
+        float restart-probability
+        uint restart-stability
+    }
+    simulator ||--|| request : ""
+    request { 
+        uint max
+        uint probablility
+        uint idle-on-probability
+        uint idle-off-probability
+    }
+    cluster ||--|| network : ""
+    cluster ||--|| storage : ""
+    cluster ||--|| state-machine : ""
 ```
 
+#### Tick
 
-
-- has state machine
+```mermaid
+erDiagram
+    simulator ||--|| cluster : ""
+    simulator ||--|{ requests : ""
+    simulator ||--|| crash : ""
+    cluster ||--|| network : ""
+    cluster ||--|{ client : ""
+    cluster ||--|{ storage : ""
+    cluster ||--|{ replica : ""
+    
+```
 
 #### What is being tested?
 
