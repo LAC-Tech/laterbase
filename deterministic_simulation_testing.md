@@ -1,10 +1,29 @@
 # Determinstic Simulation Testing
 
-### Notes
+## Notes
 
-### TigerBeetle Simulator (VOPR)
+## TigerBeetle Simulator (VOPR)
 
 commit cbc390cdf94973ade9a6a287b4ea07c8a1c51bc0 
+
+### Main Function
+
+- Gets seed either randomly or through command line args
+
+- Determines how many replicas, standbys and clients there will be.
+
+### Cluster
+
+```mermaid
+erDiagram
+    Cluster ||--|| Network
+    Cluster ||--|| Storage
+    Cluster ||--|| State Machine
+```
+
+
+
+- has state machine
 
 #### What is being tested?
 
