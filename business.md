@@ -1,8 +1,8 @@
-### Overview
+# Business
+## Overview
 
 A fast distributed event store, designed for high write availability even under network partition.
-
-### Target Users
+## Target Users
 
 Users in industries where the domain is naturally eventful. (I'm primarily thinking of supply chain & logistics, but I'm sure there's others). Probably smaller outfits where the clumsiness of traditional ERPs is failing them. Logistics is an even more specific target, as they record more info "in the field" where network resiliency matters.
 
