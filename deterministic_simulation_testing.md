@@ -1,39 +1,103 @@
 # Determinstic Simulation Testing
 
-## Notes
-
 ## TigerBeetle Simulator (VOPR)
 
 commit cbc390cdf94973ade9a6a287b4ea07c8a1c51bc0 
 
-### Main Function
+### Seed
 
-- Gets seed either randomly or through command line args
+- Seed itself is randomly generated or passed to commandline args (presumably to facilitate replays).
+- Systems each have their own seed - a random number from the top level seeded PRNG. I think this is so each subsystem can be replayed independently.
+
+### Main Function
 
 - Determines how many replicas, standbys and clients there will be.
 
 ### Options
 
 ```mermaid
-erDiagram
-    simulator ||--|| cluster : ""
-    simulator ||--|| replica : ""
-    replica { 
-        float crash-probability 
-        uint crash-stability
-        float restart-probability
-        uint restart-stability
+classDiagram
+    class Simulator {
+  
     }
-    simulator ||--|| request : ""
-    request { 
-        uint max
-        uint probablility
-        uint idle-on-probability
-        uint idle-off-probability
+
+    class Cluster {
+        replica_count: u8
+        standby_count: u8
+        client_count: u8
+        storage_size_limit: u64
+        seed: u64
     }
-    cluster ||--|| network : ""
-    cluster ||--|| storage : ""
-    cluster ||--|| state-machine : ""
+
+	class Workload {
+	}
+
+    class Replica {
+        crash_probability: float
+        crash_stability: uint
+        restart_probability: float
+        restart_stability: uint
+    }
+
+    class Request {
+        max: uint
+        probability: uint
+        idle_on_probability: uint
+        idle_off_probability: uint
+    }
+
+    class Network {
+        node_count: u8
+        client_count: u8
+        seed: u64
+        one_way_delay_mean: u8
+        one_way_delay_min: u8
+        packet_loss_probability: u8
+        path_maximum_capacity: u8
+        path_clog_duration_mean: u16
+        path_clog_probability: u8
+        packet_replay_probability: u8
+        partition_probability: u8
+        unpartition_probability: u8
+        partition_stability: u32
+        unpartition_stability: u32
+    }
+
+    class Storage {
+	    seed: u64
+        read_latency_min: u16
+        read_latency_max: u16
+        write_latency_min: u16
+        write_latency_max: u16
+        read_fault_probability: u8
+	    crash_fault_probability: u8
+    }
+
+	class StorageFaultAtlas {
+		faulty_superblock: bool
+		faulty_wal_headers: bool
+		faulty_wal_prepares: bool
+		faulty_client_replies: bool
+		faulty_grid: bool
+	}
+
+    class StateMachine {
+    }
+
+	class PartitionMode{ <<enumeration>> none, uniform_size, uniform_partition, isolate_single }
+	class PartitionSymmetry{ <<enumeration>> symmetric, asymmetric }
+
+    Simulator --* Cluster
+    Simulator --* Workload
+    Simulator --* Replica
+    Simulator --* Request
+    Cluster --* StorageFaultAtlas
+    Cluster --* Network
+    Cluster --* Storage
+    Cluster --* StateMachine
+    Network --* PartitionMode
+    Network --* PartitionSymmetry
+
 ```
 
 #### Tick
