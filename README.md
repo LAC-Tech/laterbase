@@ -24,6 +24,8 @@ Modelling the entire database as a grow only set, using delta states.
 
 - ~~Sorted version using sequential IDs~~
 
+- Supply timestamps from outside the db, construct UUIDs from those.
+
 - HTTP Server
   
   - ~~Create new DB with POST request~~

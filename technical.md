@@ -2,8 +2,11 @@
 
 ```mermaid
 erDiagram
-    SERVER ||--|{ DB : accesses
-    DB ||--|{ EVENT-STREAM : stores
+    Server ||--o{ DB : ""
+    DB ||--|| EventStream : ""
+    DB ||--|| VectorClock : ""
+    
+    
 ```
 
 ## Data Structures
@@ -28,9 +31,7 @@ sequenceDiagram
     Remote->>Local: Events matching those ID's.
 ```
 
-# 
-
-##### Hybrid Logical Clocks: Reconsidered
+# ##### Hybrid Logical Clocks: Reconsidered
 
 - Can query events in relation to physical time
 
