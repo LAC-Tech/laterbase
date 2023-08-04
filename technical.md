@@ -1,22 +1,22 @@
 # Laterbase Technical Doc
 
-The whole database is a [CRDT](https://crdt.tech/) - specifically, a grow-only map.
-
 ```mermaid
 erDiagram
     SERVER ||--|{ DB : accesses
     DB ||--|{ EVENT-STREAM : stores
 ```
 
-## Core On Disk Format
+## Data Structures
 
-The whole database is a [CRDT](https://crdt.tech/) - specifically, a grow-only map.
+Event strems are a [CRDT](https://crdt.tech/) - specifically, a grow-only map. The Keys are [ULID](https://github.com/ulid/spec) and the values are arbitrary bytes.
 
 This maps well to ordered key value stores, like LMDB or IndexedDB.
 
+Each event stream has an associated [vector clock](https://en.wikipedia.org/wiki/Vector_clock). This is used to keep track of other replicas it has synced to.
+
 ## Sync Protocol
 
-This is my take on a delta-state CRDT.
+This is my take on a delta-state CRDT. 
 
 ```mermaid
 sequenceDiagram
@@ -28,19 +28,7 @@ sequenceDiagram
     Remote->>Local: Events matching those ID's.
 ```
 
-### Data Formats
-
-#### Event Key
-
-Each key needs to be
-
-- unique, so you can never get id conflicts when syncing from other nodes
-
-- sortable, so you have an order when computing aggregates
-
-Using ULIDs. Considered hybrid logical clocks but I don't need to capture causality in my ids.
-
-Also considered UUIDv7s but the rust package situation was slightly more flakey. Should probably revisit this decision on the actual merits.
+# 
 
 ##### Hybrid Logical Clocks: Reconsidered
 
@@ -62,10 +50,6 @@ Also considered UUIDv7s but the rust package situation was slightly more flakey.
 
 Are they unique? I don't think so.
 What problem would they solve for me?
-
-#### Event Value
-
-Arbitrary bytes.
 
 ### HTTP Endpoints
 
@@ -98,8 +82,6 @@ GET /{db-name}/{view-name}
 ```
 
 ### Views
-
-
 
 ## Design specifications
 
@@ -146,52 +128,13 @@ Not 100% that LMDB should be the server side backing store. But I like it becaus
 - Not 1.0 yet
 - No mature web micro-framework
 - Less expressive than rust
+- Unused variables when debugging & testing is *fine* and I will not be shamed into thinking otherwise.
 
 #### Why Axum?
 
 - Backed by Tokio-rs, which has been around in rust for a long time
 - Nicer API than Actix-web
 - Makes sense to me!
-
-## Roadmap
-
-- ~~G-Set in rust (copy JS version, but make it mutable)~~
-
-- ~~Delta state version. Make sure it passes tests~~
-
-- ~~Sorted version using sequential IDs~~
-
-- HTTP Server
-  
-  - ~~Create new DB with POST request~~
-  
-  - ~~Factor out DB into its own file~~
-  
-  - ~~Create DB, write events, read events back~~
-  
-  - replicate tests in db module
-
-- Add pre-compiled views at runtime
-
-- "State machine" stye arbiraries that simulate multiple merges
-
-- Simulate data loss of a node, and syncing again
-
-- Test backdating
-
-- Aggregate snapshot on read
-
-- Sync views??
-
-- Persistent storage using LMDB or similar
-
-- Factor out in-memory storage engine, make a trait
-
-- More tests with tokio-rs turmoil (recommended on discord), or whatever works
-
-- ???
-
-- Profit
 
 ## References
 
