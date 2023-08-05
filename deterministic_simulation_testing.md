@@ -134,27 +134,18 @@ The high level picture is - various sanity and invariant checks in the form of a
 This can happen inside a tick function, as well as the end of the simulation (in the `simulation.done`) method.
 #### Glossary
 
-- Nodes = Replica | Standby
+A lot of this VSR related.
 
-- Standby - node currently not participating in the replication ??
-
-- Replica
-
-- One *primary* replica receives writes, the other *backup* replicas do not.
-
+- Node: a machine in the cluster. A node can be either a *Replica* or a *Standby*.
+- Standby: node currently not participating in the replication.
+- Replica: A node participating in the replication
+- Primary: The single Replica that is receiving writes.
+- Backup: Read-only Replicas
 - View: conceptual state snapshots of the whole system
-
-- Storage Fault Atlas 
-
-- `.in_flight_max` in-flight of what?
-
-- Partition Symmetry
-
+- Storage Fault Atlas - TODO: learn more about storage
+- Quorum: There 2f+1 Replicas 
 - Core: "strongly-connected component of replicas containing a view change quorum"
-
 - Core vs Quorum
-
-- Sequencer
 
 ## "Testing Distributed Systems w/ Deterministic Simulation" by Will Wilson
 

@@ -49,6 +49,13 @@ impl std::fmt::Display for Key {
 
 type Dbid = uuid::Uuid;
 
+trait DB<E: Event> {
+	fn info(&self) -> Info;
+	fn add_local(&mut self, es: &[E]) -> Vec<Key>;
+	// TODO: -> impl Iterator<Item = &'a E> as soon as rust supports this in traits
+	fn get<'a>(&'a self, ks: &'a [Key]) -> Box<dyn Iterator<Item = &'a E>>;
+}
+
 #[derive(Clone, Debug)]
 pub struct Mem<E> {
 	id: Dbid,
@@ -95,21 +102,25 @@ impl<E: Event> Mem<E> {
 		ks.iter().filter_map(|k| self.events.get(k))
 	}
 
-	fn add_remote(&mut self, remote_id: Dbid, remote_events: BTreeMap<Key, E>) {
+	pub fn add_remote(
+		&mut self,
+		remote_id: Dbid,
+		remote_events: BTreeMap<Key, E>,
+	) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
 		let lamport_clock = self.changes.len().saturating_sub(1);
 		self.vector_clock.insert(remote_id, lamport_clock);
 	}
 
-	fn keys_added_since_last_sync(&self, remote_id: Dbid) -> BTreeSet<Key> {
+	pub fn keys_added_since_last_sync(&self, remote_id: Dbid) -> BTreeSet<Key> {
 		let lamport_clock = self.vector_clock.get(&remote_id);
 		// default to 0 if we don't yet have an entry
 		let lamport_clock = *lamport_clock.unwrap_or(&0);
 		self.changes[lamport_clock..].iter().cloned().collect()
 	}
 
-	fn missing_events(
+	pub fn missing_events(
 		&self,
 		local_ks: &BTreeSet<Key>,
 		remote_ks: &BTreeSet<Key>,
