@@ -16,10 +16,6 @@ Laterbase supports backdating events.
 
 Modelling the entire database as a grow only set, using delta states.
 
-
-
-
-
 ## Roadmap
 
 - ~~G-Set in rust (copy JS version, but make it mutable)~~
@@ -27,6 +23,8 @@ Modelling the entire database as a grow only set, using delta states.
 - ~~Delta state version. Make sure it passes tests~~
 
 - ~~Sorted version using sequential IDs~~
+
+- Supply timestamps from outside the db, construct UUIDs from those.
 
 - HTTP Server
   
