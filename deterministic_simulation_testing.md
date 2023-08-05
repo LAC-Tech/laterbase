@@ -1,19 +1,19 @@
 # Determinstic Simulation Testing
 
-## TigerBeetle Simulator (VOPR)
+## Case Study: TigerBeetle Simulator (VOPR)
 
 commit cbc390cdf94973ade9a6a287b4ea07c8a1c51bc0 
-
-### Seed
-
-- Seed itself is randomly generated or passed to commandline args (presumably to facilitate replays).
-- Systems each have their own seed - a random number from the top level seeded PRNG. I think this is so each subsystem can be replayed independently.
 
 ### Main Function
 
 - Determines how many replicas, standbys and clients there will be.
+- Seed itself is randomly generated or passed to command line args (presumably to facilitate replays).
 
-### Options
+### Configuration Options
+
+These are randomly filled in, with the pre-seeded PRNG.
+ 
+Many systems have their own seed - a random number from the top level seeded PRNG. I think this is so each subsystem can be replayed independently.
 
 ```mermaid
 classDiagram
@@ -30,6 +30,8 @@ classDiagram
     }
 
 	class Workload {
+		client_count
+		in_flight_max
 	}
 
     class Replica {
@@ -65,13 +67,16 @@ classDiagram
 
     class Storage {
 	    seed: u64
-        read_latency_min: u16
-        read_latency_max: u16
-        write_latency_min: u16
-        write_latency_max: u16
+        read_latency: Latency
+        write_latency: Latency
         read_fault_probability: u8
 	    crash_fault_probability: u8
     }
+
+	class Latency {
+		min: u16
+		max: u16
+	}
 
 	class StorageFaultAtlas {
 		faulty_superblock: bool
@@ -95,51 +100,38 @@ classDiagram
     Cluster --* Network
     Cluster --* Storage
     Cluster --* StateMachine
+    Storage --* Latency
     Network --* PartitionMode
     Network --* PartitionSymmetry
 
 ```
 
-#### Tick
+### Simulation Process
 
 ```mermaid
-erDiagram
-    simulator ||--|| cluster : ""
-    simulator ||--|{ requests : ""
-    simulator ||--|| crash : ""
-    cluster ||--|| network : ""
-    cluster ||--|{ client : ""
-    cluster ||--|{ storage : ""
-    cluster ||--|{ replica : ""
-    
+flowchart TD
+	Simulator ---> Cluster
+	Cluster ---> Network
+	Cluster --1:*--> Client
+	Cluster --1:*--> Storage
+	Cluster --1:*--> ReplicaHealth{Is the replica Up or Down?}
+	Client ---> ClientMessageBus[Message Bus]
+	Client ---> ClientPingTimeout[Ping Timeout]
+	Client ---> RequestTimeout
+	ReplicaHealth -->|Up| Replica
+	ReplicaHealth -->|Down| ReplicaTimeClock[Advance clock without synchronising]
+	Replica --> AdvanceClock
+	Replica --> ReplicaPingTimeout[Ping Timeout]
+	Replica --> ReplicaMessageBus[Message Bus]
+	Replica --> VSR[Various VSR Specific Simulations]
+	
 ```
 
 #### What is being tested?
 
-#### What is being simulated?
+The high level picture is - various sanity and invariant checks in the form of asserts.
 
-- Number of replicas
-
-- The root thing being simulated is the cluster
-
-- Network
-
-- Storage
-
-- State Machinae
-
-- number of clients
-
-- Crash/Restart probability and stability, max requests
-
-- request idle??
-
-- Time
-
-- Liveness. what is that part testing?
-
-- Do requests get corrupted?
-
+This can happen inside a tick function, as well as the end of the simulation (in the `simulation.done`) method.
 #### Glossary
 
 - Nodes = Replica | Standby
@@ -164,7 +156,7 @@ erDiagram
 
 - Sequencer
 
-### "Testing Distributed Systems w/ Deterministic Simulation" by Will Wilson
+## "Testing Distributed Systems w/ Deterministic Simulation" by Will Wilson
 
 https://www.youtube.com/watch?v=4fFDFbi3toc
 
