@@ -17,11 +17,50 @@ pub struct Info {
 }
 
 trait StorageEngine {
-	fn info() -> Info;
-
+	fn n_events(&self) -> usize
 	// TODO: failure modes for writing
 	fn write_event(&mut self, k: Key, event: &[u8]);
 	fn write_change(&mut self, k: Key);
+
+	fn read_event(&self, k: Key) -> Option<&[u8]>;
+}
+
+struct InMemoryStorageEngine {
+	id: Dbid,
+	events: BTreeMap<Key, Box<[u8]>>,
+	changes: Vec<Key>,
+	vector_clock: HashMap<Dbid, usize>,
+}
+
+impl InMemoryStorageEngine {
+	fn new() -> Self {
+		Self {
+			id: uuid::Uuid::new_v4(),
+			events: BTreeMap::new(),
+			changes: vec![],
+			vector_clock: HashMap::new()
+		}
+	}
+}
+
+impl StorageEngine for InMemoryStorageEngine {
+	fn n_events(&self) -> usize {
+		self.events.len()
+	}
+	
+	// TODO: failure modes for writing
+	fn write_event(&mut self, k: Key, event: &[u8]) {
+		self.events.insert(k, Box::from(event));
+	}
+
+	// TODO: failure modes for writing
+	fn write_change(&mut self, k: Key) {
+		self.changes.push(k);
+	}
+
+	fn read_event(&self, k: Key) -> Option<&[u8]> {
+		self.events.get(&k).map(|boxed| &**boxed)
+	}
 }
 
 /*
@@ -96,7 +135,7 @@ impl<E: Event> Mem<E> {
 
 		for e in es {
 			let k = Key::new();
-			self.events.insert(k, e.clone());
+			self.events.insert(k, Box::from(bytemuck::bytes_of(e)));
 			self.changes.push(k);
 			keys.push(k)
 		}
@@ -112,7 +151,7 @@ impl<E: Event> Mem<E> {
 	pub fn add_remote(
 		&mut self,
 		remote_id: Dbid,
-		remote_events: BTreeMap<Key, E>,
+		remote_events: BTreeMap<Key, Box<[u8]>>
 	) {
 		self.changes.extend(remote_events.keys());
 		self.events.extend(remote_events);
@@ -131,14 +170,12 @@ impl<E: Event> Mem<E> {
 		&self,
 		local_ks: &BTreeSet<Key>,
 		remote_ks: &BTreeSet<Key>,
-	) -> BTreeMap<Key, E> {
+	) -> BTreeMap<Key, Box<[u8]>> {
 		local_ks
 			.difference(remote_ks)
 			.map(|k| {
-				let bytes =
-					self.events.get(k).expect("database to be consistent");
-				let e = bytemuck::from_bytes(&*bytes);
-				(*k, e.clone())
+				let bytes = self.events.get(k).expect("db to be consistent");
+				(*k, *bytes)
 			})
 			.collect()
 	}
@@ -147,7 +184,7 @@ impl<E: Event> Mem<E> {
 		&self,
 		remote_id: Dbid,
 		remote_keys_new: &BTreeSet<Key>,
-	) -> SyncResponse<E> {
+	) -> SyncResponse<Box<[u8]>> {
 		let local_keys_new = self.keys_added_since_last_sync(remote_id);
 
 		let missing_keys: BTreeSet<Key> = local_keys_new
@@ -155,7 +192,7 @@ impl<E: Event> Mem<E> {
 			.cloned()
 			.collect();
 
-		let new_events: BTreeMap<Key, E> =
+		let new_events =
 			self.missing_events(&local_keys_new, remote_keys_new);
 
 		SyncResponse {
