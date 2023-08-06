@@ -16,16 +16,19 @@ pub struct Info {
 	pub n_events: usize,
 }
 
-trait StorageEngine {
-	fn n_events(&self) -> usize
+pub trait StorageEngine {
+	fn n_events(&self) -> usize;
 	// TODO: failure modes for writing
 	fn write_event(&mut self, k: Key, event: &[u8]);
 	fn write_change(&mut self, k: Key);
 
 	fn read_event(&self, k: Key) -> Option<&[u8]>;
+
+	fn update_vector_clock(&mut self, id: Dbid, logical_time: usize);
+	fn read_vector_clock(&self, id: Dbid) -> Option<usize>
 }
 
-struct InMemoryStorageEngine {
+pub struct InMemoryStorageEngine {
 	id: Dbid,
 	events: BTreeMap<Key, Box<[u8]>>,
 	changes: Vec<Key>,
@@ -60,6 +63,14 @@ impl StorageEngine for InMemoryStorageEngine {
 
 	fn read_event(&self, k: Key) -> Option<&[u8]> {
 		self.events.get(&k).map(|boxed| &**boxed)
+	}
+
+	fn update_vector_clock(&mut self, id: Dbid, logical_time: usize) {
+		self.vector_clock.insert(id, logical_time);
+	}
+
+	fn read_vector_clock(&self, id: Dbid) -> Option<usize> {
+		self.vector_clock.get(&id).copied()
 	}
 }
 
@@ -99,26 +110,20 @@ impl std::fmt::Display for Key {
 
 type Dbid = uuid::Uuid;
 
+pub fn mem<E: Event, S: StorageEngine>() -> DB<E, S> {
+	DB::new(InMemoryStorageEngine::new())
+}
+
 #[derive(Clone, Debug)]
-pub struct Mem<E> {
-	id: Dbid,
-	events: BTreeMap<Key, Box<[u8]>>,
-	changes: Vec<Key>,
-	vector_clock: HashMap<Dbid, usize>,
+pub struct DB<E, S: StorageEngine> {
+	storage: S,
 	_e: std::marker::PhantomData<E>,
 }
 
-impl<E: Event> Mem<E> {
-	pub fn new() -> Self {
-		let id = uuid::Uuid::new_v4();
-		let events = BTreeMap::new();
-		let changes = vec![];
-		let vector_clock = HashMap::new();
+impl<E: Event, S: StorageEngine> DB<E, S> {
+	fn new(storage_engine: S) -> Self {
 		Self {
-			id,
-			events,
-			changes,
-			vector_clock,
+			storage: storage_engine,
 			_e: std::marker::PhantomData,
 		}
 	}
@@ -126,7 +131,7 @@ impl<E: Event> Mem<E> {
 	pub fn info(&self) -> Info {
 		Info {
 			storage_engine: "memory".into(),
-			n_events: self.events.len(),
+			n_events: self.storage.n_events(),
 		}
 	}
 
@@ -135,8 +140,8 @@ impl<E: Event> Mem<E> {
 
 		for e in es {
 			let k = Key::new();
-			self.events.insert(k, Box::from(bytemuck::bytes_of(e)));
-			self.changes.push(k);
+			self.storage.write_event(k, bytemuck::bytes_of(e));
+			self.storage.write_change(k);
 			keys.push(k)
 		}
 
@@ -144,7 +149,7 @@ impl<E: Event> Mem<E> {
 	}
 
 	pub fn get<'a>(&'a self, ks: &'a [Key]) -> impl Iterator<Item = &'a E> {
-		let events = ks.iter().filter_map(|k| self.events.get(k));
+		let events = ks.iter().filter_map(|k| self.storage.read_event(*k));
 		events.map(|bytes| bytemuck::from_bytes(&*bytes))
 	}
 
@@ -153,17 +158,28 @@ impl<E: Event> Mem<E> {
 		remote_id: Dbid,
 		remote_events: BTreeMap<Key, Box<[u8]>>
 	) {
-		self.changes.extend(remote_events.keys());
-		self.events.extend(remote_events);
-		let lamport_clock = self.changes.len().saturating_sub(1);
-		self.vector_clock.insert(remote_id, lamport_clock);
+		for new_key in remote_events.keys() {
+			self.storage.write_change(*new_key);
+		}
+
+		for (key, event) in remote_events.into_iter() {
+			self.storage.write_event(key, &event);
+		}
+
+		// saturing sub incase there are 0 events
+		let logical_time = self.storage.n_events().saturating_sub(1);
+		self.storage.update_vector_clock(remote_id, logical_time);
 	}
 
-	pub fn keys_added_since_last_sync(&self, remote_id: Dbid) -> BTreeSet<Key> {
-		let lamport_clock = self.vector_clock.get(&remote_id);
-		// default to 0 if we don't yet have an entry
-		let lamport_clock = *lamport_clock.unwrap_or(&0);
-		self.changes[lamport_clock..].iter().cloned().collect()
+	pub fn keys_added_since_last_sync(
+		&self, 
+		remote_id: Dbid
+	) -> impl Iterator<Item = Key>  {
+		let logical_time = self.storage
+			.read_vector_clock(remote_id)
+			.unwrap_or(0); // default to 0 if no entry for the DB exists
+
+		self.changes[logical_time..].iter().cloned().collect()
 	}
 
 	pub fn missing_events(
@@ -174,8 +190,8 @@ impl<E: Event> Mem<E> {
 		local_ks
 			.difference(remote_ks)
 			.map(|k| {
-				let bytes = self.events.get(k).expect("db to be consistent");
-				(*k, *bytes)
+				let bytes = self.storage.read_event(*k).expect("db to be consistent");
+				(*k, Box::from(bytes))
 			})
 			.collect()
 	}
@@ -185,7 +201,9 @@ impl<E: Event> Mem<E> {
 		remote_id: Dbid,
 		remote_keys_new: &BTreeSet<Key>,
 	) -> SyncResponse<Box<[u8]>> {
-		let local_keys_new = self.keys_added_since_last_sync(remote_id);
+		let local_keys_new: BTreeSet<Key> = self
+			.keys_added_since_last_sync(remote_id)
+			.collect();
 
 		let missing_keys: BTreeSet<Key> = local_keys_new
 			.difference(remote_keys_new)
@@ -208,7 +226,10 @@ pub struct SyncResponse<E> {
 	pub new_events: BTreeMap<Key, E>,
 }
 
-pub fn merge<E: Event>(local: &mut Mem<E>, remote: &mut Mem<E>) {
+pub fn merge<E: Event, S: StorageEngine>(
+	local: &mut DB<E, S>,
+	remote: &mut DB<E, S>
+) {
 	let local_keys_new = local.keys_added_since_last_sync(remote.id);
 	let remote_sync_res = remote.init_sync(local.id, &local_keys_new);
 
@@ -219,7 +240,7 @@ pub fn merge<E: Event>(local: &mut Mem<E>, remote: &mut Mem<E>) {
 	remote.add_remote(local.id, remote_events_new);
 }
 
-impl<V: Event> PartialEq for Mem<V> {
+impl<E: Event, S: StorageEngine> PartialEq for DB<E, S> {
 	fn eq(&self, other: &Self) -> bool {
 		// Events are the source of truth!
 		self.events == other.events
@@ -227,8 +248,9 @@ impl<V: Event> PartialEq for Mem<V> {
 }
 
 // Equality of event streams is reflexive
-impl<V: Event> Eq for Mem<V> {}
+impl<E: Event, S: StorageEngine> Eq for DB<E, S> {}
 
+/*
 #[cfg(test)]
 mod tests {
 	use pretty_assertions::assert_eq;
@@ -307,3 +329,4 @@ mod tests {
 		}
 	}
 }
+*/

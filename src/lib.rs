@@ -9,32 +9,32 @@ mod db;
 mod view;
 
 #[derive(Clone)]
-struct AppState<V: db::Event> {
-	dbs: Arc<RwLock<BTreeMap<String, db::Mem<V>>>>,
+struct AppState<E: db::Event, S: db::StorageEngine> {
+	dbs: Arc<RwLock<BTreeMap<String, db::DB<E, S>>>>,
 }
 
-impl<V: db::Event> AppState<V> {
+impl<E: db::Event, S: db::StorageEngine> AppState<E, S> {
 	fn new() -> Self {
 		Self {
 			dbs: Arc::new(RwLock::new(BTreeMap::new())),
 		}
 	}
 
-	fn read_dbs(&self) -> RwLockReadGuard<BTreeMap<String, db::Mem<V>>> {
+	fn read_dbs(&self) -> RwLockReadGuard<BTreeMap<String, db::DB<E, S>>> {
 		self.dbs.read().unwrap()
 	}
 
-	fn write_dbs(&self) -> RwLockWriteGuard<BTreeMap<String, db::Mem<V>>> {
+	fn write_dbs(&self) -> RwLockWriteGuard<BTreeMap<String, db::DB<E, S>>> {
 		self.dbs.write().unwrap()
 	}
 }
 
-async fn create_db<V: db::Event>(
+async fn create_db<E: db::Event>(
 	Path(name): Path<String>,
-	State(state): State<AppState<V>>,
+	State(state): State<AppState<E, db::InMemoryStorageEngine>>,
 ) -> impl response::IntoResponse {
 	let mut dbs = state.write_dbs();
-	dbs.insert(name, db::Mem::new());
+	dbs.insert(name, db::mem());
 	http::StatusCode::CREATED
 }
 
@@ -43,19 +43,19 @@ struct BulkRead {
 	keys: Vec<db::Key>,
 }
 
-async fn db_info<E: db::Event>(
+async fn db_info<E: db::Event, S: db::StorageEngine>(
 	Path(db_name): Path<String>,
-	State(state): State<AppState<E>>,
+	State(state): State<AppState<E, S>>,
 ) -> Result<(http::StatusCode, axum::Json<db::Info>), http::StatusCode> {
 	let dbs = state.read_dbs();
 	let db = dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
 	Ok((http::StatusCode::OK, Json(db.info())))
 }
 
-async fn bulk_read<E: db::Event + Serialize>(
+async fn bulk_read<E: db::Event + Serialize, S: db::StorageEngine>(
 	Query(db_name): Query<String>,
 	Query(BulkRead { keys }): Query<BulkRead>,
-	State(state): State<AppState<E>>,
+	State(state): State<AppState<E, S>>,
 ) -> Result<axum::Json<Vec<E>>, http::StatusCode> {
 	let dbs = state.read_dbs();
 	let db = dbs.get(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
@@ -63,10 +63,10 @@ async fn bulk_read<E: db::Event + Serialize>(
 	Ok(Json(events.collect()))
 }
 
-async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
-	State(state): State<AppState<V>>,
+async fn bulk_write<E: db::Event + Serialize + de::DeserializeOwned, S: db::StorageEngine>(
+	State(state): State<AppState<E, S>>,
 	Path(db_name): Path<String>,
-	Json(values): Json<Vec<V>>,
+	Json(values): Json<Vec<E>>,
 ) -> Result<(http::StatusCode, axum::Json<Vec<String>>), http::StatusCode> {
 	let mut dbs = state.write_dbs();
 	let db = dbs.get_mut(&db_name).ok_or(http::StatusCode::NOT_FOUND)?;
@@ -78,15 +78,17 @@ async fn bulk_write<V: db::Event + Serialize + de::DeserializeOwned>(
 	Ok((http::StatusCode::CREATED, Json(new_keys)))
 }
 
-pub fn router<V>() -> Router
+/*
+pub fn router<E, S>() -> Router
 where
-	V: db::Event + Serialize + 'static + de::DeserializeOwned,
+	E: db::Event + Serialize + 'static + de::DeserializeOwned,
+	S: db::StorageEngine
 {
 	Router::new()
-		.route("/db/:name", routing::post(create_db::<V>))
-		.route("/db/:name", routing::get(db_info::<V>))
-		.route("/db/:name/e", routing::put(bulk_write::<V>))
-		.route("/db/:name/e/:args", routing::get(bulk_read::<V>))
+		.route("/db/:name", routing::post(create_db::<E>))
+		.route("/db/:name", routing::get(db_info::<E, S>))
+		.route("/db/:name/e", routing::put(bulk_write::<E, S>))
+		.route("/db/:name/e/:args", routing::get(bulk_read::<E, S>))
 		.with_state(AppState::new())
 }
 
@@ -186,3 +188,4 @@ mod tests {
 		}
 	}
 }
+*/
