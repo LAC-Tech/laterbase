@@ -25,7 +25,9 @@ pub trait StorageEngine {
 	fn read_event(&self, k: Key) -> Option<&[u8]>;
 
 	fn update_vector_clock(&mut self, id: Dbid, logical_time: usize);
-	fn read_vector_clock(&self, id: Dbid) -> Option<usize>
+	fn read_vector_clock(&self, id: Dbid) -> Option<usize>;
+
+	fn keys_added_since(&self, logical_time: usize) -> impl Iterator<Item = Key>;
 }
 
 pub struct InMemoryStorageEngine {
@@ -71,6 +73,10 @@ impl StorageEngine for InMemoryStorageEngine {
 
 	fn read_vector_clock(&self, id: Dbid) -> Option<usize> {
 		self.vector_clock.get(&id).copied()
+	}
+
+	fn keys_added_since(&self, logical_time: usize) -> impl Iterator<Item = Key> {
+		Box::from(self.changes[logical_time..].into_iter().map(|k| *k))
 	}
 }
 
@@ -175,11 +181,11 @@ impl<E: Event, S: StorageEngine> DB<E, S> {
 		&self, 
 		remote_id: Dbid
 	) -> impl Iterator<Item = Key>  {
-		let logical_time = self.storage
+		let last_synced_with_remote = self.storage
 			.read_vector_clock(remote_id)
 			.unwrap_or(0); // default to 0 if no entry for the DB exists
 
-		self.changes[logical_time..].iter().cloned().collect()
+		self.storage.keys_added_since(last_synced_with_remote)
 	}
 
 	pub fn missing_events(
@@ -190,7 +196,10 @@ impl<E: Event, S: StorageEngine> DB<E, S> {
 		local_ks
 			.difference(remote_ks)
 			.map(|k| {
-				let bytes = self.storage.read_event(*k).expect("db to be consistent");
+				let bytes = self.storage
+					.read_event(*k)
+					.expect("db to be consistent");
+
 				(*k, Box::from(bytes))
 			})
 			.collect()
