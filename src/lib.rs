@@ -6,7 +6,7 @@ use axum::{http, response, routing, Json, Router};
 use serde::{de, Serialize};
 
 mod db;
-mod view;
+mod storage;
 
 #[derive(Clone)]
 struct AppState<E: db::Event, S: db::StorageEngine> {
@@ -63,7 +63,10 @@ async fn bulk_read<E: db::Event + Serialize, S: db::StorageEngine>(
 	Ok(Json(events.collect()))
 }
 
-async fn bulk_write<E: db::Event + Serialize + de::DeserializeOwned, S: db::StorageEngine>(
+async fn bulk_write<
+	E: db::Event + Serialize + de::DeserializeOwned,
+	S: db::StorageEngine,
+>(
 	State(state): State<AppState<E, S>>,
 	Path(db_name): Path<String>,
 	Json(values): Json<Vec<E>>,
