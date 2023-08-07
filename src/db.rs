@@ -103,6 +103,7 @@ impl PartialEq for InMemoryStorageEngine {
 	Ord,
 	serde::Serialize,
 	serde::Deserialize,
+	bytemuck::Pod
 )]
 pub struct Key {
 	#[serde(with = "ulid::serde::ulid_as_u128")]
@@ -152,7 +153,7 @@ impl<E: Event, S: StorageEngine> DB<E, S> {
 		}
 	}
 
-	pub fn add_local(&mut self, es: &[E]) -> Vec<Key> {
+	pub fn add_local<'a>(&mut self, es: impl Iterator<Item = &'a Key>) -> Vec<Key> {
 		let mut keys = vec![];
 
 		for e in es {
@@ -271,7 +272,6 @@ impl<E: Event, S: StorageEngine> PartialEq for DB<E, S> {
 // Equality of event streams is reflexive
 impl<E: Event, S: StorageEngine> Eq for DB<E, S> {}
 
-/*
 #[cfg(test)]
 mod tests {
 	use pretty_assertions::assert_eq;
@@ -279,8 +279,8 @@ mod tests {
 	use super::*;
 	use proptest::prelude::*;
 
-	const N_BYTES_MAX: usize = 2;
-	const N_VALS_MAX: usize = 8;
+	const N_BYTES_MAX: usize = 64;
+	const N_VALS_MAX: usize = 256;
 
 	fn arb_bytes() -> impl Strategy<Value = Vec<u8>> {
 		prop::collection::vec(any::<u8>(), 0..=N_BYTES_MAX)
@@ -294,9 +294,11 @@ mod tests {
 		Generate identical pairs of databases, that can be independently
 		mutated to prove algebraic properties of CRDTs
 	*/
-	fn arb_db_pairs() -> impl Strategy<Value = (Mem<Vec<u8>>, Mem<Vec<u8>>)> {
+
+	type ArbDB = DB<Vec<u8>, InMemoryStorageEngine>;
+	fn arb_db_pairs() -> impl Strategy<Value = (ArbDB, ArbDB)> {
 		arb_byte_vectors().prop_map(|events| {
-			let mut db1 = Mem::new();
+			let mut db1 = mem();
 
 			db1.add_local(&events);
 
@@ -306,6 +308,7 @@ mod tests {
 		})
 	}
 
+	/*
 	proptest! {
 		#[test]
 		fn can_add_and_query_single_element(val in arb_bytes()) {
@@ -349,5 +352,5 @@ mod tests {
 			assert_eq!(db_left_a, db_right_b);
 		}
 	}
+	*/
 }
-*/
