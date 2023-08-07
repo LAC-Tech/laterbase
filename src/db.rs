@@ -17,6 +17,7 @@ pub struct Info {
 }
 
 pub trait StorageEngine {
+	type I<'a>: Iterator<Item = &'a Key> where Self: 'a;
 	fn n_events(&self) -> usize;
 	// TODO: failure modes for writing
 	fn write_event(&mut self, k: Key, event: &[u8]);
@@ -27,7 +28,7 @@ pub trait StorageEngine {
 	fn update_vector_clock(&mut self, id: Dbid, logical_time: usize);
 	fn read_vector_clock(&self, id: Dbid) -> Option<usize>;
 
-	fn keys_added_since(&self, logical_time: usize) -> impl Iterator<Item = Key>;
+	fn keys_added_since(&self, logical_time: usize) -> Self::I<'_>;
 }
 
 pub struct InMemoryStorageEngine {
@@ -49,6 +50,9 @@ impl InMemoryStorageEngine {
 }
 
 impl StorageEngine for InMemoryStorageEngine {
+	type I<'a> = core::slice::Iter<'a, Key>;
+
+
 	fn n_events(&self) -> usize {
 		self.events.len()
 	}
@@ -75,8 +79,8 @@ impl StorageEngine for InMemoryStorageEngine {
 		self.vector_clock.get(&id).copied()
 	}
 
-	fn keys_added_since(&self, logical_time: usize) -> impl Iterator<Item = Key> {
-		Box::from(self.changes[logical_time..].into_iter().map(|k| *k))
+	fn keys_added_since(&self, logical_time: usize) -> Self::I<'_> {
+		self.changes[logical_time..].into_iter()
 	}
 }
 
