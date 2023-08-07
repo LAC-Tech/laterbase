@@ -16,7 +16,7 @@ pub struct Info {
 	pub n_events: usize,
 }
 
-pub trait StorageEngine {
+pub trait StorageEngine: PartialEq {
 	type I<'a>: Iterator<Item = &'a Key> where Self: 'a;
 	fn n_events(&self) -> usize;
 	// TODO: failure modes for writing
@@ -32,7 +32,6 @@ pub trait StorageEngine {
 }
 
 pub struct InMemoryStorageEngine {
-	id: Dbid,
 	events: BTreeMap<Key, Box<[u8]>>,
 	changes: Vec<Key>,
 	vector_clock: HashMap<Dbid, usize>,
@@ -41,7 +40,6 @@ pub struct InMemoryStorageEngine {
 impl InMemoryStorageEngine {
 	fn new() -> Self {
 		Self {
-			id: uuid::Uuid::new_v4(),
 			events: BTreeMap::new(),
 			changes: vec![],
 			vector_clock: HashMap::new()
@@ -84,6 +82,13 @@ impl StorageEngine for InMemoryStorageEngine {
 	}
 }
 
+impl PartialEq for InMemoryStorageEngine {
+	fn eq(&self, other: &Self) -> bool {
+		// Events are the source of truth!
+		self.events == other.events
+	}
+}
+
 /*
  * TODO: why did I wrap ulid around this? there was a reason
  * maybe it's related to all of these things I'm deriving...
@@ -120,12 +125,13 @@ impl std::fmt::Display for Key {
 
 type Dbid = uuid::Uuid;
 
-pub fn mem<E: Event, S: StorageEngine>() -> DB<E, S> {
+pub fn mem<E: Event>() -> DB<E, InMemoryStorageEngine> {
 	DB::new(InMemoryStorageEngine::new())
 }
 
 #[derive(Clone, Debug)]
 pub struct DB<E, S: StorageEngine> {
+	id: Dbid,
 	storage: S,
 	_e: std::marker::PhantomData<E>,
 }
@@ -133,6 +139,7 @@ pub struct DB<E, S: StorageEngine> {
 impl<E: Event, S: StorageEngine> DB<E, S> {
 	fn new(storage_engine: S) -> Self {
 		Self {
+			id: uuid::Uuid::new_v4(),
 			storage: storage_engine,
 			_e: std::marker::PhantomData,
 		}
@@ -184,7 +191,7 @@ impl<E: Event, S: StorageEngine> DB<E, S> {
 	pub fn keys_added_since_last_sync(
 		&self, 
 		remote_id: Dbid
-	) -> impl Iterator<Item = Key>  {
+	) -> impl Iterator<Item = &Key>  {
 		let last_synced_with_remote = self.storage
 			.read_vector_clock(remote_id)
 			.unwrap_or(0); // default to 0 if no entry for the DB exists
@@ -216,6 +223,7 @@ impl<E: Event, S: StorageEngine> DB<E, S> {
 	) -> SyncResponse<Box<[u8]>> {
 		let local_keys_new: BTreeSet<Key> = self
 			.keys_added_since_last_sync(remote_id)
+			.cloned()
 			.collect();
 
 		let missing_keys: BTreeSet<Key> = local_keys_new
@@ -243,7 +251,8 @@ pub fn merge<E: Event, S: StorageEngine>(
 	local: &mut DB<E, S>,
 	remote: &mut DB<E, S>
 ) {
-	let local_keys_new = local.keys_added_since_last_sync(remote.id);
+	let local_keys_new: BTreeSet<Key> = 
+		local.keys_added_since_last_sync(remote.id).cloned().collect();
 	let remote_sync_res = remote.init_sync(local.id, &local_keys_new);
 
 	local.add_remote(remote.id, remote_sync_res.new_events);
@@ -255,8 +264,7 @@ pub fn merge<E: Event, S: StorageEngine>(
 
 impl<E: Event, S: StorageEngine> PartialEq for DB<E, S> {
 	fn eq(&self, other: &Self) -> bool {
-		// Events are the source of truth!
-		self.events == other.events
+		self.storage == other.storage
 	}
 }
 
