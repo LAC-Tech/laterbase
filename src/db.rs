@@ -9,6 +9,8 @@ impl<T: PartialEq + Clone + Send + std::marker::Sync + bytemuck::Pod> Event
 {
 }
 
+use crate::storage;
+
 /*
  * TODO: why did I wrap ulid around this? there was a reason
  * maybe it's related to all of these things I'm deriving...
@@ -23,25 +25,21 @@ impl<T: PartialEq + Clone + Send + std::marker::Sync + bytemuck::Pod> Event
 	Ord,
 	serde::Serialize,
 	serde::Deserialize,
+	bytemuck::Zeroable,
 	bytemuck::Pod,
 )]
 #[repr(transparent)]
-pub struct Key {
-	#[serde(with = "ulid::serde::ulid_as_u128")]
-	ulid: ulid::Ulid,
-}
+pub struct Key(u128);
 
 impl Key {
 	fn new() -> Self {
-		Self {
-			ulid: ulid::Ulid::new(),
-		}
+		Self(ulid::Ulid::new().0)
 	}
 }
 
 impl std::fmt::Display for Key {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.ulid)
+		write!(f, "{}", ulid::Ulid(self.0))
 	}
 }
 
@@ -53,18 +51,18 @@ pub struct Info {
 	pub n_events: usize,
 }
 
-pub fn mem<E: Event>() -> DB<E, InMemoryStorageEngine> {
-	DB::new(InMemoryStorageEngine::new())
+pub fn simulated<E: Event>() -> DB<E, storage::Simulated> {
+	DB::new(storage::Simulated::new())
 }
 
 #[derive(Clone, Debug)]
-pub struct DB<E, S: StorageEngine> {
+pub struct DB<E, S: storage::Storage> {
 	id: Dbid,
 	storage: S,
 	_e: std::marker::PhantomData<E>,
 }
 
-impl<E: Event, S: StorageEngine> DB<E, S> {
+impl<E: Event, S: storage::Storage> DB<E, S> {
 	fn new(storage_engine: S) -> Self {
 		Self {
 			id: uuid::Uuid::new_v4(),
@@ -75,29 +73,35 @@ impl<E: Event, S: StorageEngine> DB<E, S> {
 
 	pub fn info(&self) -> Info {
 		Info {
-			storage_engine: "memory".into(),
+			// This needs to be heap-allocated for.. reasons..
+			storage_engine: String::from(S::NAME),
 			n_events: self.storage.n_events(),
 		}
 	}
 
 	pub fn add_local<'a>(
 		&mut self,
-		es: impl Iterator<Item = &'a Key>,
+		es: impl Iterator<Item = &'a E>,
 	) -> Vec<Key> {
 		let mut keys = vec![];
 
 		for e in es {
-			let k = Key::new();
-			self.storage.write_event(k, bytemuck::bytes_of(e));
-			self.storage.write_change(k);
-			keys.push(k)
+			let key = Key::new();
+			let key_bytes = bytemuck::bytes_of(&key);
+			let event_bytes = bytemuck::bytes_of(e);
+			self.storage.write_event(key_bytes, event_bytes);
+			self.storage.write_change(key_bytes);
+			keys.push(key)
 		}
 
 		keys
 	}
 
 	pub fn get<'a>(&'a self, ks: &'a [Key]) -> impl Iterator<Item = &'a E> {
-		let events = ks.iter().filter_map(|k| self.storage.read_event(*k));
+		let events = ks
+			.iter()
+			.map(|k| bytemuck::bytes_of(k))
+			.filter_map(|k| self.storage.read_event(k));
 		events.map(|bytes| bytemuck::from_bytes(&*bytes))
 	}
 
@@ -107,16 +111,17 @@ impl<E: Event, S: StorageEngine> DB<E, S> {
 		remote_events: BTreeMap<Key, Box<[u8]>>,
 	) {
 		for new_key in remote_events.keys() {
-			self.storage.write_change(*new_key);
+			self.storage.write_change(bytemuck::bytes_of(new_key));
 		}
 
-		for (key, event) in remote_events.into_iter() {
-			self.storage.write_event(key, &event);
+		for (key, event) in remote_events.iter() {
+			self.storage.write_event(bytemuck::bytes_of(key), event);
 		}
 
 		// saturing sub incase there are 0 events
 		let logical_time = self.storage.n_events().saturating_sub(1);
-		self.storage.update_vector_clock(remote_id, logical_time);
+		self.storage
+			.update_vector_clock(bytemuck::bytes_of(&remote_id), logical_time);
 	}
 
 	pub fn keys_added_since_last_sync(
@@ -175,7 +180,7 @@ pub struct SyncResponse<E> {
 	pub new_events: BTreeMap<Key, E>,
 }
 
-pub fn merge<E: Event, S: StorageEngine>(
+pub fn merge<E: Event, S: storage::Storage>(
 	local: &mut DB<E, S>,
 	remote: &mut DB<E, S>,
 ) {
@@ -192,14 +197,14 @@ pub fn merge<E: Event, S: StorageEngine>(
 	remote.add_remote(local.id, remote_events_new);
 }
 
-impl<E: Event, S: StorageEngine> PartialEq for DB<E, S> {
+impl<E: Event, S: storage::Storage> PartialEq for DB<E, S> {
 	fn eq(&self, other: &Self) -> bool {
 		self.storage == other.storage
 	}
 }
 
 // Equality of event streams is reflexive
-impl<E: Event, S: StorageEngine> Eq for DB<E, S> {}
+impl<E: Event, S: storage::Storage> Eq for DB<E, S> {}
 
 #[cfg(test)]
 mod tests {
@@ -224,12 +229,12 @@ mod tests {
 		mutated to prove algebraic properties of CRDTs
 	*/
 
-	type ArbDB = DB<Vec<u8>, InMemoryStorageEngine>;
+	type ArbDB = DB<Vec<u8>, storage::Simulated>;
 	fn arb_db_pairs() -> impl Strategy<Value = (ArbDB, ArbDB)> {
 		arb_byte_vectors().prop_map(|events| {
-			let mut db1 = mem();
+			let mut db1 = simulated();
 
-			db1.add_local(&events);
+			db1.add_local(events.iter());
 
 			let db2 = db1.clone();
 

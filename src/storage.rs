@@ -8,10 +8,12 @@
  */
 use std::collections::BTreeMap;
 
-pub trait StorageEngine: PartialEq {
+pub trait Storage: PartialEq {
 	type Keys<'a>: Iterator<Item = &'a [u8]>
 	where
 		Self: 'a;
+
+	const NAME: &'static str;
 
 	fn n_events(&self) -> usize;
 
@@ -43,8 +45,9 @@ impl Simulated {
 	}
 }
 
-impl StorageEngine for Simulated {
+impl Storage for Simulated {
 	type Keys<'a> = core::slice::Iter<'a, &'a [u8]>;
+	const NAME: &'static str = "Simualted In-Memory Storage";
 
 	fn n_events(&self) -> usize {
 		self.events.len()
@@ -70,7 +73,7 @@ impl StorageEngine for Simulated {
 		self.vector_clock.get(id).copied()
 	}
 
-	fn keys_added_since(&self, logical_time: usize) -> Self::I<'_> {
+	fn keys_added_since(&self, logical_time: usize) -> Self::Keys<'_> {
 		self.changes[logical_time..].into_iter()
 	}
 }

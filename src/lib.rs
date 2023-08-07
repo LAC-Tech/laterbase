@@ -8,6 +8,7 @@ use serde::{de, Serialize};
 mod db;
 mod storage;
 
+/*
 #[derive(Clone)]
 struct AppState<E: db::Event, S: db::StorageEngine> {
 	dbs: Arc<RwLock<BTreeMap<String, db::DB<E, S>>>>,
@@ -34,7 +35,7 @@ async fn create_db<E: db::Event>(
 	State(state): State<AppState<E, db::InMemoryStorageEngine>>,
 ) -> impl response::IntoResponse {
 	let mut dbs = state.write_dbs();
-	dbs.insert(name, db::mem());
+	dbs.insert(name, db::simulated());
 	http::StatusCode::CREATED
 }
 
@@ -81,7 +82,6 @@ async fn bulk_write<
 	Ok((http::StatusCode::CREATED, Json(new_keys)))
 }
 
-/*
 pub fn router<E, S>() -> Router
 where
 	E: db::Event + Serialize + 'static + de::DeserializeOwned,
