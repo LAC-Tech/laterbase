@@ -15,8 +15,8 @@ Events can be queried by Transaction Time (when they written to a DB) and Valid 
 
 |             | Logical                              | Physical                |
 | ----------- | ------------------------------------ | ------------------------|
-| **Transaction** | Order in which an event was recorded | When event was recorded |
-| **Valid**       | Order in which an event happened     | When event happened     |
+| **Transaction** | Event A was recorded before Event B  | When event was recorded |
+| **Valid**       | Event A happened before event B      | When event happened     |
 
 
 ## High level architecture
