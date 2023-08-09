@@ -46,7 +46,9 @@ impl Simulated {
 }
 
 impl Storage for Simulated {
-	type Keys<'a> = core::slice::Iter<'a, &'a [u8]>;
+	type Keys<'a>: Iterator<Item = &'a [u8]>
+	where
+		Self: 'a;
 	const NAME: &'static str = "Simualted In-Memory Storage";
 
 	fn n_events(&self) -> usize {
@@ -62,11 +64,11 @@ impl Storage for Simulated {
 	}
 
 	fn read_event(&self, key: &[u8]) -> Option<&[u8]> {
-		self.events.get(key).copied()
+		self.events.get(key).map(|event| &**event)
 	}
 
 	fn update_vector_clock(&mut self, id: &[u8], logical_time: usize) {
-		self.vector_clock.insert(id, logical_time);
+		self.vector_clock.insert(id.into(), logical_time);
 	}
 
 	fn read_vector_clock(&self, id: &[u8]) -> Option<usize> {
@@ -74,7 +76,9 @@ impl Storage for Simulated {
 	}
 
 	fn keys_added_since(&self, logical_time: usize) -> Self::Keys<'_> {
-		self.changes[logical_time..].into_iter()
+		let rofl = self.changes[logical_time..].iter().map(|key| &**key);
+
+		rofl
 	}
 }
 

@@ -4,17 +4,11 @@
 
 *These documents describe my end goal - not where I'm at. Feedback and contributions welcome!*
 
-Laterbase is an append only, multi-master database. It is designed to store and process *events*: immutable facts describing real world events, that took place at a certain (physical) time.
-
-Laterbase supports backdating events.
+Laterbase is an event store that syncs. It stores both when an event happened in the real world and when it was received by the data store. Any laterbase can sync with any other laterbase, with guaranteed no loss of data.
 
 [Business](business.md)
 
 [Technical](technical.md)
-
- root. IE a single LMDB env has an event database as well as an aggregate one.
-
-Modelling the entire database as a grow only set, using delta states.
 
 ## Roadmap
 

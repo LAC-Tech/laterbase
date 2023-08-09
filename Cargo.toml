@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 axum = { version = "0.6.19", features = ["macros"] }
 serde = { version = "1.0.171", features = ["derive"] }
-bytemuck = { version = "1.13.1", features = ["derive"] }
+bytemuck = { version = "1.13.1", features = ["derive", "extern_crate_std"] }
 ulid = { version = "1.0.0", features = ["serde"] }
 uuid = { version = "1.4.0", features = ["v4"] }
 

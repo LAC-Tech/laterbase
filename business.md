@@ -1,22 +1,3 @@
-# Business
-## Overview
+The industry I have in mind for this is Logistics. I feel it's a naturally eventful domain, ill-suited to databases that only store the current state of the world. It's also an industry where connectivity can be a challenge; warehouses and distribution centers are one thing, but what about capturing data on the road, at the farm gate, or out at sea? You want to be able to record events always, not just when the internet is working.
 
-A fast distributed event store, designed for high write availability even under network partition.
-## Target Users
-
-Users in industries where the domain is naturally eventful. (I'm primarily thinking of supply chain & logistics, but I'm sure there's others). Probably smaller outfits where the clumsiness of traditional ERPs is failing them. Logistics is an even more specific target, as they record more info "in the field" where network resiliency matters.
-
-### Business Objectives:
-
-- Improve supply chain and logistics operational efficiency.
-- Function during network outages and in the field.
-- Optimize performance for event stream processing.
-- Support multi-platform usage:
-
-### Key Features:
-
-- Backdating
-- Multi region deployment without any loss of write availability
-- Retroactive event writing for integration of existing and third-party data.
-- User-defined schemas and aggregation functions.
-- Focus on event sourcing and syncing.
+Logistics also has quite terrible software, so that helps a lot.
