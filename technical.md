@@ -1,4 +1,25 @@
-# Laterbase Technical Doc
+## Taxonomy
+
+### Event Store
+
+Designed to store representations of real world events, as the source of truth of a data system.
+### Multi-Master
+
+There is no master, leader, primary, otherwise 'special' node in the cluster. Everything can receive writes without waiting for any other nodes, and merge later.
+### Append-Only
+
+Events can only be added, never removed.
+### Bi-Temporal
+
+Events can be queried by Transaction Time (when they written to a DB) and Valid Time (when they happened in the real world).
+
+|             | Logical                              | Physical                |
+| ----------- | ------------------------------------ | ------------------------|
+| **Transaction** | Order in which an event was recorded | When event was recorded |
+| **Valid**       | Order in which an event happened     | When event happened     |
+
+
+## High level architecture
 
 ```mermaid
 erDiagram
@@ -11,7 +32,25 @@ erDiagram
 
 ## Data Structures
 
-Event strems are a [CRDT](https://crdt.tech/) - specifically, a grow-only map. The Keys are [ULID](https://github.com/ulid/spec) and the values are arbitrary bytes.
+First off, let's sketch out what I need to be able to do:
+- Having an append only list of Event IDs - ordered by when they were added to that node. this helps with syncing.
+- Be able to quickly look up events by their unique ID.
+- Range scans by transaction time.
+- Range scans by valid time.
+### Event Stream
+The entire event stream constitutes a [CRDT](https://crdt.tech/) - specifically, a grow-only map. 
+### Keys
+I've had some thoughts on this. 
+
+Keys need to be:
+- globally unique. Any laterbase should be able to sync with any other (within reason!).
+- Sortable. Ordered key value stores are the 'lowest common denominator' of storage engines to build this on.
+It'd be nice if they captured one of
+- Valid Time
+- Transaction Time
+- Logical Time
+
+The Keys are [ULID](https://github.com/ulid/spec) and the values are arbitrary bytes.
 
 This maps well to ordered key value stores, like LMDB or IndexedDB.
 
@@ -19,7 +58,9 @@ Each event stream has an associated [vector clock](https://en.wikipedia.org/wiki
 
 ## Sync Protocol
 
-This is my take on a delta-state CRDT. 
+This is my take on a delta-state CRDT.
+
+TODO: considering abandoning this req/res handshake scheme into something more fire-and-forget. More pure message passing; just fire stuff to a random selection of neighbours and let the gossip spread.
 
 ```mermaid
 sequenceDiagram
@@ -31,7 +72,7 @@ sequenceDiagram
     Remote->>Local: Events matching those ID's.
 ```
 
-# ##### Hybrid Logical Clocks: Reconsidered
+## Hybrid Logical Clocks: Reconsidered
 
 - Can query events in relation to physical time
 
