@@ -8,11 +8,9 @@
  */
 use std::collections::BTreeMap;
 
-pub trait Storage: PartialEq {
-	type Keys<'a>: Iterator<Item = &'a [u8]>
-	where
-		Self: 'a;
+type Keys<'a> = Box<dyn Iterator<Item = &'a [u8]> + 'a>;
 
+pub trait Storage: PartialEq {
 	const NAME: &'static str;
 
 	fn n_events(&self) -> usize;
@@ -26,9 +24,10 @@ pub trait Storage: PartialEq {
 	fn update_vector_clock(&mut self, id: &[u8], logical_time: usize);
 	fn read_vector_clock(&self, id: &[u8]) -> Option<usize>;
 
-	fn keys_added_since(&self, logical_time: usize) -> Self::Keys<'_>;
+	fn keys_added_since(&self, logical_time: usize) -> Keys<'_>;
 }
 
+#[cfg_attr(test, derive(Clone, Debug))]
 pub struct Simulated {
 	events: BTreeMap<Box<[u8]>, Box<[u8]>>,
 	changes: Vec<Box<[u8]>>,
@@ -46,9 +45,6 @@ impl Simulated {
 }
 
 impl Storage for Simulated {
-	type Keys<'a>: Iterator<Item = &'a [u8]>
-	where
-		Self: 'a;
 	const NAME: &'static str = "Simualted In-Memory Storage";
 
 	fn n_events(&self) -> usize {
@@ -75,10 +71,8 @@ impl Storage for Simulated {
 		self.vector_clock.get(id).copied()
 	}
 
-	fn keys_added_since(&self, logical_time: usize) -> Self::Keys<'_> {
-		let rofl = self.changes[logical_time..].iter().map(|key| &**key);
-
-		rofl
+	fn keys_added_since(&self, logical_time: usize) -> Keys<'_> {
+		Box::from(self.changes[logical_time..].iter().map(|key| &**key))
 	}
 }
 

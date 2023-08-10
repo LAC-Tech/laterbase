@@ -1,5 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::storage;
+
+enum Message {
+	StoreEvents,
+	SendInfo,
+}
+
 pub trait Event:
 	std::cmp::PartialEq + Clone + Send + std::marker::Sync + bytemuck::Pod
 {
@@ -8,8 +15,6 @@ impl<T: PartialEq + Clone + Send + std::marker::Sync + bytemuck::Pod> Event
 	for T
 {
 }
-
-use crate::storage;
 
 /*
  * TODO: why did I wrap ulid around this? there was a reason
@@ -55,7 +60,7 @@ pub fn simulated<E: Event>() -> DB<E, storage::Simulated> {
 	DB::new(storage::Simulated::new())
 }
 
-#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Clone, Debug))]
 pub struct DB<E, S: storage::Storage> {
 	id: Dbid,
 	storage: S,
@@ -121,17 +126,20 @@ impl<E: Event, S: storage::Storage> DB<E, S> {
 		// saturing sub incase there are 0 events
 		let logical_time = self.storage.n_events().saturating_sub(1);
 		self.storage
-			.update_vector_clock(bytemuck::bytes_of(&remote_id), logical_time);
+			.update_vector_clock(&remote_id.into_bytes(), logical_time);
 	}
 
 	pub fn keys_added_since_last_sync(
 		&self,
 		remote_id: Dbid,
 	) -> impl Iterator<Item = &Key> {
-		let last_synced_with_remote =
-			self.storage.read_vector_clock(remote_id).unwrap_or(0); // default to 0 if no entry for the DB exists
+		let last_synced_with_remote = self
+			.storage
+			.read_vector_clock(&remote_id.into_bytes())
+			.unwrap_or(0); // default to 0 if no entry for the DB exists
 
 		self.storage.keys_added_since(last_synced_with_remote)
+            .map(bytemuck::from_bytes)
 	}
 
 	pub fn missing_events(
@@ -142,10 +150,11 @@ impl<E: Event, S: storage::Storage> DB<E, S> {
 		local_ks
 			.difference(remote_ks)
 			.map(|k| {
-				let bytes =
-					self.storage.read_event(*k).expect("db to be consistent");
+                let key_bytes = bytemuck::bytes_of(k);
+				let event_bytes =
+					self.storage.read_event(key_bytes).expect("db to be consistent");
 
-				(*k, Box::from(bytes))
+				(*k, Box::from(event_bytes))
 			})
 			.collect()
 	}
