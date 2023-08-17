@@ -13,10 +13,6 @@ Events can only be added, never removed.
 
 Events can be queried by Transaction Time (when they written to a DB) and Valid Time (when they happened in the real world).
 
-|             | Logical                              | Physical                |
-| ----------- | ------------------------------------ | ------------------------|
-| **Transaction** | Event A was recorded before Event B  | When event was recorded |
-| **Valid**       | Event A happened before event B      | When event happened     |
 
 
 ## High level architecture
@@ -39,23 +35,29 @@ First off, let's sketch out what I need to be able to do:
 - Range scans by valid time.
 ### Event Stream
 The entire event stream constitutes a [CRDT](https://crdt.tech/) - specifically, a grow-only map. 
-### Keys
-I've had some thoughts on this. 
+### IDs 
+IDs need to be:
+- **Globally Unique**: Any laterbase should be able to sync with any other. This implies a 16 byte key with a lot of randomness.
+- **Sortable**: Ordered key value stores are the 'lowest common denominator' of storage engines - let's try and match these semantics. This implies the IDs are prefixed with some kind of physical timestamp.
+#### Decision - Valid or Transaction Time for the Physical Timestamp?
 
-Keys need to be:
-- globally unique. Any laterbase should be able to sync with any other (within reason!).
-- Sortable. Ordered key value stores are the 'lowest common denominator' of storage engines to build this on.
-It'd be nice if they captured one of
-- Valid Time
-- Transaction Time
-- Logical Time
+We're going to need to represent both things.
 
-The Keys are [ULID](https://github.com/ulid/spec) and the values are arbitrary bytes.
+So which makes for a better primary key? Do we privilege scanning by Valid time or Transaction time?
 
-This maps well to ordered key value stores, like LMDB or IndexedDB.
+### Timestamps
 
-Each event stream has an associated [vector clock](https://en.wikipedia.org/wiki/Vector_clock). This is used to keep track of other replicas it has synced to.
+AFAICT there are four different kinds of time in the system.
 
+|             | Logical                              | Physical                |
+| ----------- | ------------------------------------ | ------------------------|
+| **Transaction** | Event A was recorded before Event B  | When event was recorded |
+| **Valid**       | Event A happened before event B      | When event happened     |
+
+Can we combine logical and physical timestamps and get that down to 2?
+### Version Vector
+Each event stream has an associated [version vector](https://en.wikipedia.org/wiki/Version_vector). This is used to keep track of other replicas it has synced to.
+Remember we're using version vectors and not vector clocks because conceptually we're updating one big data structure.
 ## Sync Protocol
 
 This is my take on a delta-state CRDT.
