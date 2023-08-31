@@ -1,9 +1,22 @@
 # Determinstic Simulation Testing
 
+## SimTigerBeetle (Director's Cut!)
+
+https://www.youtube.com/watch?v=Vch4BWUVzMM
+
+- "How do you test systems for all combinations of failures, when the failures are rare?"
+- The state machine, message bus and storage engine are deterministic
+- Deterministic storage engine was a big reason they did not choose Rocks or Level
+- Run the simulator for a day, you have two years of test time.
+- "Can we replay the chaos? Can we share the chaos with our friends and colleagues?"
+- As well as foundation DB they were inspired by dropbox w/deterministic fuzzing.
+- Try and write as much of the database as you can in a deterministic way.
+- "Raft and Paxos - their formal proofs assume that the disk is perfect"
+- If you switch on the logs, they will all be printed out in happens-before order.
+- Protocol-Aware Testing: Simulator will test the system up to the theoretical limits of the consensus protocol.
 ## Case Study: TigerBeetle Simulator (VOPR)
 
 commit cbc390cdf94973ade9a6a287b4ea07c8a1c51bc0 
-
 ### Main Function
 
 - Determines how many replicas, standbys and clients there will be.
