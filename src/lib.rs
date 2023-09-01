@@ -10,15 +10,26 @@ compile_error!("I have assumed little endian throughout this codebase");
 mod time {
 	/// When the database recored an event
 	#[repr(transparent)]
-	struct Transaction<T>(T);
+	#[derive(
+		rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, PartialEq,
+	)]
+	pub struct Transaction<T>(T);
 
 	/// When the event happened in the real world
 	#[repr(transparent)]
-	struct Valid<T>(T);
+	pub struct Valid<T>(T);
+}
+
+mod clock {
+	pub type Logical = usize;
 }
 
 mod event {
-	pub trait ID {}
+	use super::{clock, time};
+
+	pub trait ID {
+		fn time(&self) -> time::Transaction<clock::Logical>;
+	}
 	pub trait Val {}
 }
 
@@ -26,14 +37,10 @@ mod event {
 #[derive(
 	rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, PartialEq,
 )]
-enum Message<ID: event::ID, E: event::Val> {
-	SendBackTheseEvents(Vec<ID>),
-	SendBackEventsSince,
-	/// Events brand new to the system. The current node will create an ID
-	StoreNewEvents(Vec<E>),
-	/// Events originating from another node are called 'foreign'.
-	/// They have their own ID
-	StoreForeignEvents(BTreeMap<ID, E>),
+enum Message<'a, ID: event::ID, E: event::Val> {
+	SendBackTheseEvents(&'a [ID]),
+	SendBackEventsSince(time::Transaction<clock::Logical>),
+	StoreEvents(BTreeMap<ID, E>),
 }
 
 //mod db;
