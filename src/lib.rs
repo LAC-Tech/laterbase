@@ -1,16 +1,54 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use axum::extract::{Path, Query, State};
-use axum::{http, response, routing, Json, Router};
-use serde::{de, Serialize};
+#[cfg(target_endian = "big")]
+compile_error!("I have assumed little endian throughout this codebase");
 
-mod db;
-mod storage;
+/**
+ * Laterbase is a bi-temporal event store. This means it has two distinct concepts of time:
+ * transaction time and valid time.
+ */
+mod time {
+	/// When the database recored an event
+	#[repr(transparent)]
+	#[derive(
+		rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, PartialEq,
+	)]
+	pub struct Transaction<T>(T);
+
+	/// When the event happened in the real world
+	#[repr(transparent)]
+	pub struct Valid<T>(T);
+}
+
+mod clock {
+	pub type Logical = usize;
+}
+
+mod event {
+	use super::{clock, time};
+
+	pub trait ID {
+		fn time(&self) -> time::Transaction<clock::Logical>;
+	}
+	pub trait Val {}
+}
+
+/** All of these must be idempotent */
+#[derive(
+	rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, PartialEq,
+)]
+enum Message<'a, ID: event::ID, E: event::Val> {
+	SendBackTheseEvents(&'a [ID]),
+	SendBackEventsSince(time::Transaction<clock::Logical>),
+	StoreEvents(BTreeMap<ID, E>),
+}
+
+//mod db;
+//mod storage;
 
 /*
 #[derive(Clone)]
-struct AppState<E: db::Event, S: db::StorageEngine> {
+pub struct AppState<E: db::Event, S: storage::Storage> {
 	dbs: Arc<RwLock<BTreeMap<String, db::DB<E, S>>>>,
 }
 

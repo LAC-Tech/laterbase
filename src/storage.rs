@@ -8,8 +8,11 @@
  */
 use std::collections::BTreeMap;
 
+<<<<<<< HEAD
 type Keys<'a> = Box<dyn Iterator<Item = &'a [u8]> + 'a>;
 
+=======
+>>>>>>> 4c424886d00c4283d33e8d79749e7eff9ef6390e
 pub trait Storage: PartialEq {
 	const NAME: &'static str;
 
@@ -27,7 +30,12 @@ pub trait Storage: PartialEq {
 	fn keys_added_since(&self, logical_time: usize) -> Keys<'_>;
 }
 
+<<<<<<< HEAD
 #[cfg_attr(test, derive(Clone, Debug))]
+=======
+type Keys<'a> = Box<dyn Iterator<Item = &'a [u8]> + 'a>;
+
+>>>>>>> 4c424886d00c4283d33e8d79749e7eff9ef6390e
 pub struct Simulated {
 	events: BTreeMap<Box<[u8]>, Box<[u8]>>,
 	changes: Vec<Box<[u8]>>,
@@ -72,7 +80,11 @@ impl Storage for Simulated {
 	}
 
 	fn keys_added_since(&self, logical_time: usize) -> Keys<'_> {
+<<<<<<< HEAD
 		Box::from(self.changes[logical_time..].iter().map(|key| &**key))
+=======
+		Box::from(self.changes.iter().skip(logical_time).map(|key| &**key))
+>>>>>>> 4c424886d00c4283d33e8d79749e7eff9ef6390e
 	}
 }
 

@@ -1,3 +1,4 @@
+/*
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::storage;
@@ -138,8 +139,14 @@ impl<E: Event, S: storage::Storage> DB<E, S> {
 			.read_vector_clock(&remote_id.into_bytes())
 			.unwrap_or(0); // default to 0 if no entry for the DB exists
 
+<<<<<<< HEAD
 		self.storage.keys_added_since(last_synced_with_remote)
             .map(bytemuck::from_bytes)
+=======
+		self.storage
+			.keys_added_since(last_synced_with_remote)
+			.map(|bytes| bytemuck::from_bytes(bytes))
+>>>>>>> 4c424886d00c4283d33e8d79749e7eff9ef6390e
 	}
 
 	pub fn missing_events(
@@ -150,9 +157,16 @@ impl<E: Event, S: storage::Storage> DB<E, S> {
 		local_ks
 			.difference(remote_ks)
 			.map(|k| {
+<<<<<<< HEAD
                 let key_bytes = bytemuck::bytes_of(k);
 				let event_bytes =
 					self.storage.read_event(key_bytes).expect("db to be consistent");
+=======
+				let bytes = self
+					.storage
+					.read_event(bytemuck::bytes_of(k))
+					.expect("db to be consistent");
+>>>>>>> 4c424886d00c4283d33e8d79749e7eff9ef6390e
 
 				(*k, Box::from(event_bytes))
 			})
@@ -233,17 +247,12 @@ mod tests {
 		prop::collection::vec(arb_bytes(), 0..=N_VALS_MAX)
 	}
 
-	/*
-		Generate identical pairs of databases, that can be independently
-		mutated to prove algebraic properties of CRDTs
-	*/
-
-	type ArbDB = DB<Vec<u8>, storage::Simulated>;
-	fn arb_db_pairs() -> impl Strategy<Value = (ArbDB, ArbDB)> {
+	fn arb_storage_pairs(
+	) -> impl Strategy<Value = (impl storage::Storage, impl storage::Storage)> {
 		arb_byte_vectors().prop_map(|events| {
 			let mut db1 = simulated();
 
-			db1.add_local(events.iter());
+			db1.add_local(events.iter().map(|e| e.as_slice()));
 
 			let db2 = db1.clone();
 
@@ -297,3 +306,4 @@ mod tests {
 	}
 	*/
 }
+*/
