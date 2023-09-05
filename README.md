@@ -6,9 +6,9 @@
 
 Laterbase is an event store that syncs. It stores both when an event happened in the real world and when it was received by the data store. Any laterbase can sync with any other laterbase, with guaranteed no loss of data.
 
-[Business](business.md)
+[Business](notes/business.md)
 
-[Technical](technical.md)
+[Technical](nodes/technical.md)
 
 ## Roadmap
 
