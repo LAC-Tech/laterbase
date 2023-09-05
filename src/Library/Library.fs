@@ -101,19 +101,3 @@ type Replica<'e>(addr: IAddress<'e>) =
             )
 
             store_events events
-
-module Simulated =
-    type AddressFactory<'e>(seed: int) = 
-        let Rng = Random seed
-        let ether = SortedDictionary<Guid, Replica<'e>>()
-        member _.Create() = 
-            let randomBytes = Array.zeroCreate<byte> 16
-            Rng.NextBytes randomBytes
-
-            let eventId = Guid randomBytes
-            { new IAddress<'e> with
-                member _.Send msg = 
-                    match ether |> dictGet eventId with
-                    | Some(replica) -> replica.Send msg
-                    | None -> 
-                        fprintfn Console.Error "no replica for %A" eventId }
