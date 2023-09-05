@@ -40,6 +40,10 @@ module Event =
 	 *)
     type ID = struct
         val private Ulid: Ulid
+        /// timestamp - milliseconds since epoch
+        /// randonness - 10 random bytes
+        new(timestamp: int64, randomness: ReadOnlySpan<byte>) =
+            { Ulid = Ulid(timestamp, randomness) }
     end
 
 // Interface instead of a function so it can be compared
