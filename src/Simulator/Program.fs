@@ -17,9 +17,7 @@ type AddressFactory<'e>(seed: int) =
               | Some(replica) -> replica.Send msg
               | None -> 
                   fprintfn Console.Error "no replica for %A" eventId }
-
-
-
+                  
 type Event = int32
 let addressFactory = AddressFactory<Event>(seed)
 
