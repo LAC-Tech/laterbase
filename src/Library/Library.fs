@@ -18,9 +18,12 @@ module Time =
     /// When an event happened in the domain
     type Valid<'t> = Valid of 't
 
-module Clock =
-    type Physical = DateTimeOffset
+    [<Measure>] type ms
+    let s = 1000L<ms>
+    let m = 60L * s
+    let h = 60L * m
 
+module Clock =
     type Logical = struct
         val private N: uint64
         private new(n: uint64) = { N = n }
@@ -42,13 +45,13 @@ module Event =
         val private Ulid: Ulid
         /// timestamp - milliseconds since epoch
         /// randonness - 10 random bytes
-        new(timestamp: int64, randomness: ReadOnlySpan<byte>) =
-            { Ulid = Ulid(timestamp, randomness) }
+        new(timestamp: int64<Time.ms>, randomness: ReadOnlySpan<byte>) =
+            { Ulid = Ulid(int64 timestamp, randomness) }
     end
 
 // Interface instead of a function so it can be compared
 type IAddress<'e> =
-    abstract Send: msg: Message<'e> -> unit
+    abstract Send: msg: Message<'e> -> Result<unit, Threading.Tasks.Task<string>>
 // All of the messages must be idempotent
 and Message<'e> =
     | SyncWith of IAddress<'e>
@@ -72,6 +75,9 @@ type Replica<'e>(addr: IAddress<'e>) =
         for (k, v) in es do
             events[k] <- v
             appendLog.Add(k)
+        Ok ()
+
+    member _.Address = addr
 
     member _.Send msg =
         match msg with

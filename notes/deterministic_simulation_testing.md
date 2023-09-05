@@ -16,6 +16,8 @@ https://www.youtube.com/watch?v=Vch4BWUVzMM
 - Protocol-Aware Testing: Simulator will test the system up to the theoretical limits of the consensus protocol.
 ## Case Study: TigerBeetle Simulator (VOPR)
 
+10 ms per tick
+
 commit cbc390cdf94973ade9a6a287b4ea07c8a1c51bc0 
 ### Main Function
 
