@@ -19,7 +19,7 @@ module Time =
     type Valid<'t> = Valid of 't
 
 module Clock =
-    type Physical = System.DateTimeOffset
+    type Physical = DateTimeOffset
 
     type Logical = struct
         val private N: uint64
@@ -77,10 +77,7 @@ type Replica<'e>(addr: IAddress<'e>) =
                 |> dictGet addr 
                 |> Option.defaultValue Clock.Logical.Epoch
 
-            let msg = SendEvents(
-                since = Time.Transaction lc,
-                toAddr = addr
-            )
+            let msg = SendEvents(since = Time.Transaction lc, toAddr = addr)
             addr.Send(msg)
         | SendEvents (since, toAddr) ->
             let (Time.Transaction since) = since 
@@ -92,12 +89,12 @@ type Replica<'e>(addr: IAddress<'e>) =
 
             let local_logical_time = appendLog.Count |> Clock.Logical.FromInt
 
-            let outgoingMsg = StoreEvents(
+            let msg = StoreEvents(
                 from = Some (addr, Time.Transaction (local_logical_time)),
                 events = events
             )
             
-            toAddr.Send outgoingMsg
+            toAddr.Send msg
         | StoreEvents (from, events) ->
             from |> Option.iter (fun (addr, Time.Transaction lc) ->
                 versionVector[addr] <- lc
@@ -106,11 +103,9 @@ type Replica<'e>(addr: IAddress<'e>) =
             store_events events
 
 module Simulated =
-    type Ether<'e> = SortedDictionary<System.Guid, Replica<'e>>
-
     type AddressFactory<'e>(seed: int) = 
-        let Rng = System.Random seed
-        let ether = Ether<'e>()
+        let Rng = Random seed
+        let ether = SortedDictionary<Guid, Replica<'e>>()
         member _.Create() = 
             let randomBytes = Array.zeroCreate<byte> 16
             Rng.NextBytes randomBytes
