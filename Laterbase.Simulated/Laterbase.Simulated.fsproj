@@ -9,4 +9,8 @@
     <Compile Include="Library.fs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Laterbase.Core\Laterbase.Core.fsproj" />
+  </ItemGroup>
+
 </Project>

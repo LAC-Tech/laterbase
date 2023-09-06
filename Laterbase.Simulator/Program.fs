@@ -4,34 +4,13 @@ open System.Diagnostics.Tracing
 open System.Threading.Tasks
 
 open Laterbase.Core
+open Laterbase.Simulated
 /// Deterministic Simulation Tester for Laterbase
-/// Heavily inspired by the Tigerbeetle Simulator, as well as Will Wilsons talk.
+/// Inspired by Tigerbeetle Simulator, as well as Will Wilsons talk.
 
 type Event = int32
 
 let log (s: string) = printf $"{s}"
-
-type Ether = SortedDictionary<Guid, Library.Replica<Event>>
-
-type Address(rng: Random, ether: Ether) =
-    let randomBytes = Array.zeroCreate<byte> 16
-    do
-        rng.NextBytes randomBytes
-    let addressId = Guid randomBytes
-    
-    override _.ToString() = addressId.ToString()
-
-    interface Library.IAddress<Event> with
-        member _.Send msg : Result<unit, Threading.Tasks.Task<string>> = 
-            match ether |> Library.dictGet addressId with
-            | Some(replica) -> 
-                replica.Send msg |> ignore
-                Ok ()
-            | None -> Task.FromResult($"no replica for {addressId}") |> Error
-
-type AddressFactory<'e>(rng: Random) = 
-    let ether = Ether()
-    member _.Create() = Address (rng, ether)
 
 [<EntryPoint>]
 let main args =
@@ -54,12 +33,12 @@ let main args =
 
     let replicas = 
         seq { 0 .. replicaCount } 
-        |> Seq.map (fun _ -> addressFactory.Create () |> Library.Replica)
-
+        |> Seq.map (fun _ -> addressFactory.Create () |> Replica)
 
     for replica in replicas do
         $"{replica.Address}\n" |> log
 
-        for t in 0L<Time.ms> .. 10L<Time.ms> .. Time.h do
-            ()
+    for t in 0L<Time.ms> .. 10L<Time.ms> .. Time.s do
+        printfn "%A miliseconds elapsed" t
+
     0

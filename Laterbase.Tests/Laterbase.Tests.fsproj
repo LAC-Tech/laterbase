@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Laterbase.Core\Laterbase.Core.fsproj" />
+    <ProjectReference Include="..\Laterbase.Simulated\Laterbase.Simulated.fsproj" />
   </ItemGroup>
 
 </Project>
