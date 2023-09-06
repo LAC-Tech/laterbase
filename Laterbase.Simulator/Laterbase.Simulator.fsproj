@@ -9,12 +9,4 @@
     <Compile Include="Program.fs" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="fscheck" Version="2.16.6" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Library\Library.fsproj" />
-  </ItemGroup>
-
 </Project>

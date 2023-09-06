@@ -3,7 +3,7 @@ open System.Collections.Generic
 open System.Diagnostics.Tracing
 open System.Threading.Tasks
 
-open Library
+open Laterbase.Core
 /// Deterministic Simulation Tester for Laterbase
 /// Heavily inspired by the Tigerbeetle Simulator, as well as Will Wilsons talk.
 

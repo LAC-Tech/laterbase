@@ -1,4 +1,4 @@
-﻿module Library
+﻿module Laterbase.Core
 open System
 open System.Collections.Generic
 open System.Linq

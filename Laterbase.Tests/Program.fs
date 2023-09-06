@@ -1,5 +1,5 @@
 ﻿open FsCheck
-open Library
+open Laterbase.Core
 
 System.Console.Clear ()
 
