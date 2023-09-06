@@ -55,12 +55,16 @@ type IAddress<'e> =
 // All of the messages must be idempotent
 and Message<'e> =
     | SyncWith of IAddress<'e>
-    | SendEvents of
-        since : Time.Transaction<Clock.Logical> * 
-        toAddr: IAddress<'e> 
-    | StoreEvents of
-        from: (IAddress<'e> * Time.Transaction<Clock.Logical>) option *
-        events: (Event.ID * 'e) list
+    | SendEvents of EventRequest<'e> 
+    | StoreEvents of EventResponse<'e>
+and EventResponse<'e> = { 
+    From: (IAddress<'e> * Time.Transaction<Clock.Logical>) option
+    Events: (Event.ID * 'e) list
+}
+and EventRequest<'e> = {
+    Since : Time.Transaction<Clock.Logical>
+    ToAddr: IAddress<'e> 
+}
 
 /// A replica is a database backed replica of the events, as well as an Actor
 type Replica<'e>(addr: IAddress<'e>) =
@@ -71,43 +75,48 @@ type Replica<'e>(addr: IAddress<'e>) =
     let event_matching_id eventId = 
         events |> dictGet eventId |> Option.map (fun v -> (eventId, v))
 
-    let store_events es = 
+    member _.Address = addr
+
+    member _.GetLogicalClock addr =
+        versionVector 
+        |> dictGet addr 
+        |> Option.defaultValue Clock.Logical.Epoch
+
+    member _.SendEvents (since: Time.Transaction<Clock.Logical>) =
+        let (Time.Transaction since) = since
+            
+        let events = 
+            appendLog.Skip (since.ToInt())
+            |> Seq.choose event_matching_id
+            |> Seq.toList
+
+        let localLogicalTime = appendLog.Count |> Clock.Logical.FromInt
+
+        {
+            From = Some (addr, Time.Transaction localLogicalTime);
+            Events = events
+        }
+
+    member _.StoreEvents {From = from; Events = es} =
+        let updateClock (addr, Time.Transaction lc) = versionVector[addr] <- lc
+        // If it came from another replica, update version vec to reflect this
+        from |> Option.iter updateClock
+
         for (k, v) in es do
             events[k] <- v
             appendLog.Add(k)
+
+let send<'e> msg (replica: Replica<'e>) =
+    match msg with
+    | SyncWith addr ->
+        let outgoingMsg = SendEvents { 
+            Since = Time.Transaction (replica.GetLogicalClock addr) 
+            ToAddr = replica.Address
+        }
+        addr.Send outgoingMsg
+    | SendEvents {Since = since; ToAddr = toAddr} ->
+        let outgoingMsg = StoreEvents (replica.SendEvents since)
+        toAddr.Send outgoingMsg
+    | StoreEvents eventRes -> 
+        replica.StoreEvents eventRes
         Ok ()
-
-    member _.Address = addr
-
-    member _.Send msg =
-        match msg with
-        | SyncWith addr ->
-            let lc = 
-                versionVector 
-                |> dictGet addr 
-                |> Option.defaultValue Clock.Logical.Epoch
-
-            let msg = SendEvents(since = Time.Transaction lc, toAddr = addr)
-            addr.Send(msg)
-        | SendEvents (since, toAddr) ->
-            let (Time.Transaction since) = since 
-            
-            let events = 
-                appendLog.Skip (since.ToInt())
-                |> Seq.choose event_matching_id
-                |> Seq.toList
-
-            let local_logical_time = appendLog.Count |> Clock.Logical.FromInt
-
-            let msg = StoreEvents(
-                from = Some (addr, Time.Transaction (local_logical_time)),
-                events = events
-            )
-            
-            toAddr.Send msg
-        | StoreEvents (from, events) ->
-            from |> Option.iter (fun (addr, Time.Transaction lc) ->
-                versionVector[addr] <- lc
-            )
-
-            store_events events

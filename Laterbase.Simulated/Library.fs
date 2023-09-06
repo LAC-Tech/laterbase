@@ -1,12 +1,6 @@
 ﻿module Laterbase.Simulated
 
 open System
-
-open System.Collections.Generic
-open System.Threading.Tasks
-
-open Laterbase.Core
-
 open System.Collections.Generic
 open System.Threading.Tasks
 
@@ -23,13 +17,24 @@ type Address<'e>(rng: Random, ether: Ether<'e>) =
     interface IAddress<'e> with
         member _.Send (msg: Message<'e>) : Result<unit, Task<string>> = 
             match ether |> dictGet addressId with
-            | Some(replica) -> 
-                replica.Send msg |> ignore
+            | Some replica -> 
+                send msg replica |> ignore
                 Ok ()
             | None -> Task.FromResult($"no replica for {addressId}") |> Error
 
+    member _.Id = addressId
     override _.ToString() = addressId.ToString()
+    override _.Equals(other) = 
+        match other with
+        | :? Address<'e> as addr -> addressId = addr.Id
+        | _ -> false
+    override _.GetHashCode() = addressId.GetHashCode ()
 
-type AddressFactory<'e>(rng: Random) = 
+
+type AddressFactory<'e>(seed: int) = 
     let ether = Ether()
-    member _.Create() = Address<'e> (rng, ether)
+    let rng = Random seed
+    member _.Create() = 
+        let addr = Address<'e> (rng, ether)
+        ether[addr.Id] <- Replica addr
+        addr

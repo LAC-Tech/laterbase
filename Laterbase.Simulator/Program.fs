@@ -27,16 +27,17 @@ let main args =
         | _ -> failwith "too many args"
 
     let rng = Random seed
-    let addressFactory = AddressFactory<Event> rng
+    let addressFactory = AddressFactory<Event> seed
 
     let replicaCount = rng.Next(2, 16)
 
-    let replicas = 
+    let addresses = 
         seq { 0 .. replicaCount } 
-        |> Seq.map (fun _ -> addressFactory.Create () |> Replica)
+        |> Seq.map (fun _ -> addressFactory.Create ())
+        |> Seq.toList
 
-    for replica in replicas do
-        $"{replica.Address}\n" |> log
+    for addr in addresses do
+        $"Replica created at address: {addr}\n" |> log
 
     for t in 0L<Time.ms> .. 10L<Time.ms> .. Time.s do
         printfn "%A miliseconds elapsed" t
