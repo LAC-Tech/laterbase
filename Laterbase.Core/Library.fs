@@ -106,6 +106,7 @@ type Replica<'e>(addr: IAddress<'e>) =
             events[k] <- v
             appendLog.Add(k)
 
+(* I split this out from replica so it could be tested at a lower level *)
 let send<'e> msg (replica: Replica<'e>) =
     match msg with
     | SyncWith addr ->

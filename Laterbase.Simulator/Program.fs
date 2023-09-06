@@ -8,7 +8,7 @@ open Laterbase.Simulated
 /// Deterministic Simulation Tester for Laterbase
 /// Inspired by Tigerbeetle Simulator, as well as Will Wilsons talk.
 
-type Event = int32
+type Event = byte
 
 let log (s: string) = printf $"{s}"
 
