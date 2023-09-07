@@ -51,10 +51,17 @@ Check.One(config, idsAreUnique)
 let ``storing events locally is idempotent`` (db: Database<EventVal, Guid>) (es: (Event.ID * byte) list) =
     db.WriteEvents None es
 
-    printfn "%A" es
+    let (actualEvents, lc) = db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
 
-    let (readBackEvents, lc) = db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
+    // We expect the database to have sorted them by key
+    let expectedEvents = es |> List.sortBy (fun (k, v) -> k)
 
-    es = readBackEvents
+    if expectedEvents <> actualEvents then
+        printfn "expected: %A" expectedEvents
+        printfn "actual: %A" actualEvents
+        false
+    else
+        true
+
 
 Check.One(config, ``storing events locally is idempotent``)

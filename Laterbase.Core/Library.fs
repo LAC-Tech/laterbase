@@ -92,7 +92,7 @@ type Database<'e, 'addr>(addr: 'addr) =
         from |> Option.iter updateClock
 
         for (k, v) in newEvents do
-            events[k] <- v
+            events.Add (k, v)
             appendLog.Add k
 
 /// A replica is a database backed replica of the events, as well as an Actor
