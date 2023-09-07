@@ -28,26 +28,26 @@ module Time =
 
 module Clock =
     type Logical(n: uint64) = struct
-        member this.ToInt () = Checked.int n
+        member _.ToInt () = Checked.int n
         static member FromInt n = Logical (Checked.uint64 n)
         static member Epoch = Logical 0UL
     end
 
-module Event =
-    (**
-	 * IDs must be globally unique and orderable. They should contain within 
-	 * them the physical valid time. This is so clients can generate their own
-	 * IDs.
-	 * 
-	 * TODO: make sure the physical time is not greater than current time.
-	 *)    
-    type ID = struct
-        val private Ulid: Ulid
-        /// timestamp - milliseconds since epoch
-        /// randonness - 10 random bytes
-        new(timestamp: int64<Time.ms>, randomness: ReadOnlySpan<byte>) =
-            { Ulid = Ulid(int64 timestamp, randomness) }
-    end
+(** 
+ * IDs must be globally unique and orderable. They should contain within 
+ * them the physical valid time. This is so clients can generate their own
+ * IDs.
+ * 
+ * TODO: make sure the physical time is not greater than current time.
+*)
+
+type EventID = struct
+    val private Ulid: Ulid
+    /// timestamp - milliseconds since epoch
+    /// randonness - 10 random bytes
+    new(timestamp: int64<Time.ms>, randomness: ReadOnlySpan<byte>) =
+        { Ulid = Ulid(int64 timestamp, randomness) }
+end
 
 // Interface instead of a function so it can be compared
 type IAddress<'e> =
@@ -59,7 +59,7 @@ and Message<'e> =
     | StoreEvents of EventResponse<'e>
 and EventResponse<'e> = { 
     From: (IAddress<'e> * Time.Transaction<Clock.Logical>) option
-    Events: (Event.ID * 'e) list
+    Events: (EventID * 'e) list
 }
 and EventRequest<'e> = {
     Since : Time.Transaction<Clock.Logical>
@@ -68,8 +68,8 @@ and EventRequest<'e> = {
 
 /// At this point we know nothing about the address, it's just an ID
 type Database<'e, 'addr>(addr: 'addr) =
-    let events = SortedDictionary<Event.ID, 'e>()
-    let appendLog = ResizeArray<Event.ID>()
+    let events = SortedDictionary<EventID, 'e>()
+    let appendLog = ResizeArray<EventID>()
     let versionVector = SortedDictionary<'addr, Clock.Logical>()
     
     let event_matching_id eventId =

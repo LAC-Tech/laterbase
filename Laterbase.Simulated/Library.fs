@@ -17,7 +17,7 @@ type Address<'e>(rng: Random, ether: Ether<'e>) =
     interface IAddress<'e> with
         member _.Send (msg: Message<'e>) : Result<unit, Task<string>> = 
             match ether |> dictGet addressId with
-            | Some replica -> send msg replica
+            | Some replica -> replica.Send msg
             | None -> Task.FromResult($"no replica for {addressId}") |> Error
 
     member _.Id = addressId
