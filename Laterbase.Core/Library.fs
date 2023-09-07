@@ -1,7 +1,10 @@
 ﻿module Laterbase.Core
+
 open System
 open System.Collections.Generic
 open System.Linq
+open System.Threading.Tasks
+
 open NetUlid
 
 (* Convenience functions *)
@@ -24,10 +27,8 @@ module Time =
     let h = 60L * m
 
 module Clock =
-    type Logical = struct
-        val private N: uint64
-        private new(n: uint64) = { N = n }
-        member this.ToInt () = Checked.int this.N
+    type Logical(n: uint64) = struct
+        member this.ToInt () = Checked.int n
         static member FromInt n = Logical (Checked.uint64 n)
         static member Epoch = Logical 0UL
     end
@@ -39,8 +40,7 @@ module Event =
 	 * IDs.
 	 * 
 	 * TODO: make sure the physical time is not greater than current time.
-     * TODO: pass in own seed and timestamp
-	 *)
+	 *)    
     type ID = struct
         val private Ulid: Ulid
         /// timestamp - milliseconds since epoch
@@ -51,7 +51,7 @@ module Event =
 
 // Interface instead of a function so it can be compared
 type IAddress<'e> =
-    abstract Send: msg: Message<'e> -> Result<unit, Threading.Tasks.Task<string>>
+    abstract Send: msg: Message<'e> -> Result<unit, Task<string>>
 // All of the messages must be idempotent
 and Message<'e> =
     | SyncWith of IAddress<'e>
