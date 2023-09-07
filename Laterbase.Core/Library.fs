@@ -55,22 +55,18 @@ type IAddress<'e> =
 // All of the messages must be idempotent
 and Message<'e> =
     | SyncWith of IAddress<'e>
-    | SendEvents of EventRequest<'e> 
-    | StoreEvents of EventResponse<'e>
-and EventResponse<'e> = { 
-    From: (IAddress<'e> * Time.Transaction<Clock.Logical>) option
-    Events: (EventID * 'e) list
-}
-and EventRequest<'e> = {
-    Since : Time.Transaction<Clock.Logical>
-    ToAddr: IAddress<'e> 
-}
+    | SendEvents of 
+        since : Time.Transaction<Clock.Logical> * toAddr: IAddress<'e>
+    | StoreEvents of 
+        from: (IAddress<'e> * Time.Transaction<Clock.Logical>) option *
+        events:  (EventID * 'e) list
 
 /// At this point we know nothing about the address, it's just an ID
 type Database<'e, 'addr>(addr: 'addr) =
     let events = SortedDictionary<EventID, 'e>()
     let appendLog = ResizeArray<EventID>()
-    let versionVector = SortedDictionary<'addr, Clock.Logical>()
+    let versionVector = 
+        SortedDictionary<'addr, Time.Transaction<Clock.Logical>>()
     
     let event_matching_id eventId =
         events |> dictGet eventId |> Option.map (fun v -> (eventId, v))
@@ -78,7 +74,7 @@ type Database<'e, 'addr>(addr: 'addr) =
     member _.GetLogicalClock addr =
         versionVector
         |> dictGet addr
-        |> Option.defaultValue Clock.Logical.Epoch
+        |> Option.defaultValue (Time.Transaction Clock.Logical.Epoch)
 
     member _.SendEvents (since: Time.Transaction<Clock.Logical>) =
         let (Time.Transaction since) = since
@@ -92,7 +88,7 @@ type Database<'e, 'addr>(addr: 'addr) =
         (events, Time.Transaction localLogicalTime)
 
     member _.StoreEvents from newEvents =
-        let updateClock (addr, Time.Transaction lc) = versionVector[addr] <- lc
+        let updateClock (addr, lc) = versionVector[addr] <- lc
         // If it came from another replica, update version vec to reflect this
         from |> Option.iter updateClock
 
@@ -107,19 +103,17 @@ type Replica<'e>(addr: IAddress<'e>) =
 
     member this.Send<'e> msg =
         match msg with
-        | SyncWith addr ->
-            let outgoingMsg = SendEvents { 
-                Since = Time.Transaction (db.GetLogicalClock addr) 
-                ToAddr = this.Address
-            }
-            addr.Send outgoingMsg
-        | SendEvents {Since = since; ToAddr = toAddr} ->
+        | SyncWith remoteAddr ->
+            let outgoingMsg = SendEvents (
+                since = db.GetLogicalClock remoteAddr,
+                toAddr = this.Address
+            )
+            remoteAddr.Send outgoingMsg
+        | SendEvents (since, toAddr) ->
             let (events, t) = db.SendEvents since
-            let outgoingMsg = StoreEvents {
-                From = Some (this.Address, t)
-                Events = events
-            }
+            let outgoingMsg = 
+                StoreEvents (from = Some (this.Address, t), events = events)
             toAddr.Send outgoingMsg
-        | StoreEvents {From = from; Events = events } ->
+        | StoreEvents (from, events) ->
             db.StoreEvents from events
             Ok ()
