@@ -27,8 +27,7 @@ type MyGenerators =
     static member EventID() =
         {new Arbitrary<EventID>() with
             override _.Generator = genEventID
-            override _.Shrinker _ = Seq.empty
-        }
+            override _.Shrinker _ = Seq.empty}
 
 let config = {
     Config.Quick with Arbitrary = [ typeof<MyGenerators> ]
