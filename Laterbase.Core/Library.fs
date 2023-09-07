@@ -66,20 +66,18 @@ and EventRequest<'e> = {
     ToAddr: IAddress<'e> 
 }
 
-/// A replica is a database backed replica of the events, as well as an Actor
-type Replica<'e>(addr: IAddress<'e>) =
+/// At this point we know nothing about the address, it's just an ID
+type Database<'e, 'addr>(addr: 'addr) =
     let events = SortedDictionary<Event.ID, 'e>()
     let appendLog = ResizeArray<Event.ID>()
-    let versionVector = SortedDictionary<IAddress<'e>, Clock.Logical>()
+    let versionVector = SortedDictionary<'addr, Clock.Logical>()
     
-    let event_matching_id eventId = 
+    let event_matching_id eventId =
         events |> dictGet eventId |> Option.map (fun v -> (eventId, v))
 
-    member _.Address = addr
-
     member _.GetLogicalClock addr =
-        versionVector 
-        |> dictGet addr 
+        versionVector
+        |> dictGet addr
         |> Option.defaultValue Clock.Logical.Epoch
 
     member _.SendEvents (since: Time.Transaction<Clock.Logical>) =
@@ -91,33 +89,37 @@ type Replica<'e>(addr: IAddress<'e>) =
             |> Seq.toList
 
         let localLogicalTime = appendLog.Count |> Clock.Logical.FromInt
+        (events, Time.Transaction localLogicalTime)
 
-        {
-            From = Some (addr, Time.Transaction localLogicalTime);
-            Events = events
-        }
-
-    member _.StoreEvents {From = from; Events = es} =
+    member _.StoreEvents from newEvents =
         let updateClock (addr, Time.Transaction lc) = versionVector[addr] <- lc
         // If it came from another replica, update version vec to reflect this
         from |> Option.iter updateClock
 
-        for (k, v) in es do
+        for (k, v) in newEvents do
             events[k] <- v
-            appendLog.Add(k)
+            appendLog.Add k
 
-(* I split this out from replica so it could be tested at a lower level *)
-let send<'e> msg (replica: Replica<'e>) =
-    match msg with
-    | SyncWith addr ->
-        let outgoingMsg = SendEvents { 
-            Since = Time.Transaction (replica.GetLogicalClock addr) 
-            ToAddr = replica.Address
-        }
-        addr.Send outgoingMsg
-    | SendEvents {Since = since; ToAddr = toAddr} ->
-        let outgoingMsg = StoreEvents (replica.SendEvents since)
-        toAddr.Send outgoingMsg
-    | StoreEvents eventRes -> 
-        replica.StoreEvents eventRes
-        Ok ()
+/// A replica is a database backed replica of the events, as well as an Actor
+type Replica<'e>(addr: IAddress<'e>) =
+    let db = Database(addr)
+    member _.Address = addr
+
+    member this.Send<'e> msg =
+        match msg with
+        | SyncWith addr ->
+            let outgoingMsg = SendEvents { 
+                Since = Time.Transaction (db.GetLogicalClock addr) 
+                ToAddr = this.Address
+            }
+            addr.Send outgoingMsg
+        | SendEvents {Since = since; ToAddr = toAddr} ->
+            let (events, t) = db.SendEvents since
+            let outgoingMsg = StoreEvents {
+                From = Some (this.Address, t)
+                Events = events
+            }
+            toAddr.Send outgoingMsg
+        | StoreEvents {From = from; Events = events } ->
+            db.StoreEvents from events
+            Ok ()
