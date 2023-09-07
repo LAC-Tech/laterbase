@@ -11,7 +11,7 @@ let genLogicalClock =
 
 let genEventID =
     Gen.map2 
-        (fun ts (bytes: byte array) -> EventID(ts, ReadOnlySpan bytes))
+        (fun ts (bytes: byte array) -> Event.createID ts (ReadOnlySpan bytes))
         (Arb.generate<int64<Time.ms>> |> Gen.map abs)
         (Arb.generate<byte> |> Gen.arrayOfLength 10)
 
@@ -24,7 +24,7 @@ type MyGenerators =
             override _.Shrinker _ = Seq.empty}
     
     static member EventID() =
-        {new Arbitrary<EventID>() with
+        {new Arbitrary<Event.ID>() with
             override _.Generator = genEventID
             override _.Shrinker _ = Seq.empty}
 
@@ -43,15 +43,18 @@ let logicaClockToAndFromInt (lc: Clock.Logical) =
 
 Check.One(config, logicaClockToAndFromInt)
 
-let idsAreUnique (eventIds: List<EventID>) =
+let idsAreUnique (eventIds: List<Event.ID>) =
     (eventIds |> List.distinct |> List.length) = (eventIds |> List.length)
 
 Check.One(config, idsAreUnique)
 
-let ``storing events locally is idempotent`` (db: Database<EventVal, Guid>) (es: (EventID * byte) list) =
-    db.StoreEvents None es
+let ``storing events locally is idempotent`` (db: Database<EventVal, Guid>) (es: (Event.ID * byte) list) =
+    db.WriteEvents None es
 
-    let (readBackEvents, lc) = db.SendEvents (Time.Transaction Clock.Logical.Epoch)
+    printfn "%A" es
+
+    let (readBackEvents, lc) = db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
 
     es = readBackEvents
 
+Check.One(config, ``storing events locally is idempotent``)

@@ -39,15 +39,14 @@ module Clock =
  * IDs.
  * 
  * TODO: make sure the physical time is not greater than current time.
-*)
+ *)
 
-type EventID = struct
-    val private Ulid: Ulid
+module Event = 
+    type ID = Ulid
     /// timestamp - milliseconds since epoch
     /// randonness - 10 random bytes
-    new(timestamp: int64<Time.ms>, randomness: ReadOnlySpan<byte>) =
-        { Ulid = Ulid(int64 timestamp, randomness) }
-end
+    let createID (timestamp: int64<Time.ms>) (randomness: ReadOnlySpan<byte>) =
+        Ulid(int64 timestamp, randomness)
 
 // Interface instead of a function so it can be compared
 type IAddress<'e> =
@@ -59,12 +58,12 @@ and Message<'e> =
         since : Time.Transaction<Clock.Logical> * toAddr: IAddress<'e>
     | StoreEvents of 
         from: (IAddress<'e> * Time.Transaction<Clock.Logical>) option *
-        events:  (EventID * 'e) list
+        events:  (Event.ID * 'e) list
 
 /// At this point we know nothing about the address, it's just an ID
 type Database<'e, 'addr>(addr: 'addr) =
-    let events = SortedDictionary<EventID, 'e>()
-    let appendLog = ResizeArray<EventID>()
+    let events = SortedDictionary<Event.ID, 'e>()
+    let appendLog = ResizeArray<Event.ID>()
     let versionVector = 
         SortedDictionary<'addr, Time.Transaction<Clock.Logical>>()
     
@@ -76,7 +75,7 @@ type Database<'e, 'addr>(addr: 'addr) =
         |> dictGet addr
         |> Option.defaultValue (Time.Transaction Clock.Logical.Epoch)
 
-    member _.SendEvents (since: Time.Transaction<Clock.Logical>) =
+    member _.ReadEvents (since: Time.Transaction<Clock.Logical>) =
         let (Time.Transaction since) = since
             
         let events = 
@@ -87,7 +86,7 @@ type Database<'e, 'addr>(addr: 'addr) =
         let localLogicalTime = appendLog.Count |> Clock.Logical.FromInt
         (events, Time.Transaction localLogicalTime)
 
-    member _.StoreEvents from newEvents =
+    member _.WriteEvents from newEvents =
         let updateClock (addr, lc) = versionVector[addr] <- lc
         // If it came from another replica, update version vec to reflect this
         from |> Option.iter updateClock
@@ -110,10 +109,10 @@ type Replica<'e>(addr: IAddress<'e>) =
             )
             remoteAddr.Send outgoingMsg
         | SendEvents (since, toAddr) ->
-            let (events, t) = db.SendEvents since
+            let (events, t) = db.ReadEvents since
             let outgoingMsg = 
                 StoreEvents (from = Some (this.Address, t), events = events)
             toAddr.Send outgoingMsg
         | StoreEvents (from, events) ->
-            db.StoreEvents from events
+            db.WriteEvents from events
             Ok ()
