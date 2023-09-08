@@ -1,6 +1,5 @@
 //! Laterbase is a bi-temporal event store. This means it has two distinc concepts of time: transaction time and valid time.
 
-use std;
 use std::collections::BTreeMap;
 
 #[cfg(target_endian = "big")]
@@ -28,13 +27,11 @@ mod clock {
 }
 
 mod event {
-	/**
-	 * IDs must be globally unique and orderable. They should contain within
-	 * them the physical valid time. This is so clients can generate their own
-	 * IDs.
-	 *
-	 * TODO: make sure the physical time is not greater than current time.
-	 */
+	/// IDs must be globally unique and orderable. Within them should be
+	/// contained a valid physical time, so that clients may generate their
+	/// own IDs. 
+	/// 
+	/// TODO: make sure the physical time is not greater than current time.
 	#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 	#[repr(transparent)]
 	pub struct Id(ulid::Ulid);
@@ -47,11 +44,12 @@ mod event {
 }
 
 trait Address<E> {
-	//fn send(msg: Message<E>);
+	// TODO: timeout callback?
+	fn send(&self, msg: Message<E>);
 }
 
-/** All of these must be idempotent */
-enum Message<E> {
+/// All of these must be idempotent
+pub enum Message<E> {
 	SyncWith(Box<dyn Address<E>>),
 	SendEvents {
 		since: time::Transaction<clock::Logical>,
@@ -64,15 +62,15 @@ enum Message<E> {
 }
 
 #[derive(Debug)]
-pub struct Database<Addr: std::fmt::Debug, E: std::fmt::Debug> {
+pub struct Database<Addr, E> {
 	events: BTreeMap<event::Id, E>,
 	append_log: Vec<event::Id>,
 	version_vector: BTreeMap<Addr, time::Transaction<clock::Logical>>,
 }
 
 impl<Addr, E> Database<Addr, E> where
-	Addr: Ord + Copy + std::fmt::Debug, 
-	E: Copy + std::fmt::Debug
+	Addr: Ord + Copy, 
+	E: Copy
 {
 	fn new() -> Self {
 		Self {
@@ -83,7 +81,7 @@ impl<Addr, E> Database<Addr, E> where
 	}
 
 	fn event_matching_id(&self, id: &event::Id) -> Option<(event::Id, E)> {
-		self.events.get_key_value(&id).map(|(&k, &v)| (k, v))
+		self.events.get_key_value(id).map(|(&k, &v)| (k, v))
 	}
 
 	pub fn transaction_logical_clock(
@@ -103,7 +101,7 @@ impl<Addr, E> Database<Addr, E> where
 		let event_ids = &self.append_log[since..];
 
 		let events: Box<[(event::Id, E)]> = event_ids
-			.into_iter()
+			.iter()
 			.flat_map(|id| self.event_matching_id(id))
 			.collect();
 
@@ -113,23 +111,37 @@ impl<Addr, E> Database<Addr, E> where
 	pub fn write_events(
 		&mut self,
 		from: Option<(Addr, time::Transaction<clock::Logical>)>,
-		new_events: Box<[(event::Id, E)]>,
+		new_events: &[(event::Id, E)],
 	) {
 		if let Some((addr, lc)) = from {
 			self.version_vector.insert(addr, lc);
 		}
 
-		for (k, v) in new_events.into_iter() {
+		for (k, v) in new_events.iter() {
 			self.events.insert(*k, *v);
 			self.append_log.push(*k);
 		}
 	}
 }
 
+pub struct Replica<E> {
+	addr: Box<dyn Address<E>>,
+	db: Database<Box<dyn Address<E>>, E>
+}
+
+impl<E> Replica<E> {
+	pub fn send(&self, msg: Message<E>) {
+		match msg {
+			Message::SendEvents { since, to_addr } => {
+				let es =self.db.read_events(since);
+			}
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
-
-use super::*;
+	use super::*;
 	use proptest::prelude::*;
 
 	fn arb_event_id() -> impl Strategy<Value = event::Id> {
@@ -141,16 +153,32 @@ use super::*;
 		prop::collection::vec((arb_event_id(), any::<u8>()), 0..=100)
 	}
 
-	proptest! { 
+	fn arb_db() -> impl Strategy<Value = Database::<uuid::Uuid, u8>> {
+		arb_events().prop_map(|es| {
+			let mut db = Database::<uuid::Uuid, u8>::new();
+			db.write_events(None, &es);
+			db
+		})
+	}
+
+	proptest! {
 		#[test]
 		fn can_read_and_write_events(events in arb_events()) {
 			let mut db = Database::<uuid::Uuid, u8>::new();
-			db.write_events(None, events.clone().into_boxed_slice());
+			db.write_events(None, &events);
 
 			let (recorded_events, _) = 
 				db.read_events(time::Transaction(clock::LOGICAL_EPOCH));
 
 			assert_eq!(events.as_slice(), &*recorded_events);
+		}
+
+		#[test]
+		fn merging_is_idempotent(db1 in arb_db(), db2 in arb_db()) {
+			let (id1, id2) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+
+			db2.transaction_logical_clock(id1);
+			db2.read_events(db1.transaction_logical_clock(id2));
 		}
 	}
 }
