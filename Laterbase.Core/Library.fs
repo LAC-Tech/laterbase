@@ -75,6 +75,7 @@ type Database<'e, 'addr>(addr: 'addr) =
         |> dictGet addr
         |> Option.defaultValue (Time.Transaction Clock.Logical.Epoch)
 
+    /// Returns events in transaction order, ie the order they were written
     member _.ReadEvents (since: Time.Transaction<Clock.Logical>) =
         let (Time.Transaction since) = since
             
