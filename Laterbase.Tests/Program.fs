@@ -25,7 +25,7 @@ type MyGenerators =
     
     static member EventID() =
         {new Arbitrary<Event.ID>() with
-            override _.Generator = genEventID
+            override _.Generator = genEventID                            
             override _.Shrinker _ = Seq.empty}
 
     static member DataBase() =
@@ -51,17 +51,17 @@ Check.One(config, idsAreUnique)
 let ``storing events locally is idempotent`` (db: Database<EventVal, Guid>) (es: (Event.ID * byte) list) =
     db.WriteEvents None es
 
-    let (actualEvents, lc) = db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
+    let (actualEvents, lc) = 
+        db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
 
     // We expect the database to have sorted them by key
     let expectedEvents = es |> List.sortBy (fun (k, v) -> k)
 
-    if expectedEvents <> actualEvents then
-        printfn "expected: %A" expectedEvents
-        printfn "actual: %A" actualEvents
-        false
-    else
+    if expectedEvents = actualEvents then
         true
-
+    else   
+        eprintfn "actual: %A" actualEvents
+        eprintfn "expected: %A" expectedEvents
+        false
 
 Check.One(config, ``storing events locally is idempotent``)

@@ -64,7 +64,7 @@ and Message<'e> =
 type Database<'e, 'addr>(addr: 'addr) =
     let events = SortedDictionary<Event.ID, 'e>()
     let appendLog = ResizeArray<Event.ID>()
-    let versionVector = 
+    let versionVector =
         SortedDictionary<'addr, Time.Transaction<Clock.Logical>>()
     
     let event_matching_id eventId =
@@ -94,6 +94,17 @@ type Database<'e, 'addr>(addr: 'addr) =
         for (k, v) in newEvents do
             events.Add (k, v)
             appendLog.Add k
+
+    override _.ToString() = 
+        let es = 
+            [for e in events -> $"({e.Key}, {e.Value})" ]
+            |> String.concat ";"
+
+        [
+            "DATABASE";
+            $"- Address = {addr}";
+            $"- Events = [{es}]"
+        ] |> String.concat "\n"
 
 /// A replica is a database backed replica of the events, as well as an Actor
 type Replica<'e>(addr: IAddress<'e>) =
