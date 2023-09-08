@@ -141,7 +141,7 @@ use super::*;
 		prop::collection::vec((arb_event_id(), any::<u8>()), 0..=100)
 	}
 
-	proptest! {
+	proptest! { 
 		#[test]
 		fn can_read_and_write_events(events in arb_events()) {
 			let mut db = Database::<uuid::Uuid, u8>::new();
