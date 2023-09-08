@@ -40,8 +40,8 @@ mod event {
 	pub struct Id(ulid::Ulid);
 
 	impl Id {
-		fn new(ts_ms: u64, randBytes: u128) -> Self {
-			Self(ulid::Ulid::from_parts(ts_ms, randBytes))
+		pub fn new(ts_ms: u64, rand_bytes: u128) -> Self {
+			Self(ulid::Ulid::from_parts(ts_ms, rand_bytes))
 		}
 	}
 }
@@ -55,7 +55,7 @@ enum Message<E> {
 	SyncWith(Box<dyn Address<E>>),
 	SendEvents {
 		since: time::Transaction<clock::Logical>,
-		toAddr: Box<dyn Address<E>>,
+		to_addr: Box<dyn Address<E>>,
 	},
 	StoreEvents {
 		from: Option<(Box<dyn Address<E>>, time::Transaction<clock::Logical>)>,
@@ -70,8 +70,9 @@ pub struct Database<Addr: std::fmt::Debug, E: std::fmt::Debug> {
 	version_vector: BTreeMap<Addr, time::Transaction<clock::Logical>>,
 }
 
-impl<Addr: Ord + Copy + std::fmt::Debug, E: Copy + std::fmt::Debug>
-	Database<Addr, E>
+impl<Addr, E> Database<Addr, E> where
+	Addr: Ord + Copy + std::fmt::Debug, 
+	E: Copy + std::fmt::Debug
 {
 	fn new() -> Self {
 		Self {
@@ -99,9 +100,9 @@ impl<Addr: Ord + Copy + std::fmt::Debug, E: Copy + std::fmt::Debug>
 		&self,
 		time::Transaction(since): time::Transaction<clock::Logical>,
 	) -> (Box<[(event::Id, E)]>, time::Transaction<clock::Logical>) {
-		let eventIds = &self.append_log[since..];
+		let event_ids = &self.append_log[since..];
 
-		let events: Box<[(event::Id, E)]> = eventIds
+		let events: Box<[(event::Id, E)]> = event_ids
 			.into_iter()
 			.flat_map(|id| self.event_matching_id(id))
 			.collect();
@@ -121,6 +122,35 @@ impl<Addr: Ord + Copy + std::fmt::Debug, E: Copy + std::fmt::Debug>
 		for (k, v) in new_events.into_iter() {
 			self.events.insert(*k, *v);
 			self.append_log.push(*k);
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+
+use super::*;
+	use proptest::prelude::*;
+
+	fn arb_event_id() -> impl Strategy<Value = event::Id> {
+		any::<(usize, u128)>()
+			.prop_map(|(ts, bytes)| event::Id::new(ts as u64, bytes))
+	}
+
+	fn arb_events() -> impl Strategy<Value = Vec<(event::Id, u8)>> {
+		prop::collection::vec((arb_event_id(), any::<u8>()), 0..=100)
+	}
+
+	proptest! {
+		#[test]
+		fn can_read_and_write_events(events in arb_events()) {
+			let mut db = Database::<uuid::Uuid, u8>::new();
+			db.write_events(None, events.clone().into_boxed_slice());
+
+			let (recorded_events, _) = 
+				db.read_events(time::Transaction(clock::LOGICAL_EPOCH));
+
+			assert_eq!(events.as_slice(), &*recorded_events);
 		}
 	}
 }
