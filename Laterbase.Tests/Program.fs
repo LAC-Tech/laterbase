@@ -52,6 +52,15 @@ type MyGenerators =
             override _.Generator = genEventID                            
             override _.Shrinker _ = Seq.empty}
 
+    static member DB() =
+        {new Arbitrary<Database<byte>>() with
+            override _.Generator = 
+                Arb.generate<unit> 
+                |> Gen.map (fun _ -> Database())                            
+            override _.Shrinker _ = Seq.empty}
+
+
+
 let config = {
     Config.Quick with Arbitrary = [ typeof<MyGenerators> ]
 }
@@ -69,12 +78,18 @@ Check.One(config, idsAreUnique)
 
 let ``storing events locally is idempotent`` 
     (db: Database<EventVal>)
-    (es: (Event.ID * byte) list) =
-    db.WriteEvents None es
+    (inputEvents: (Event.ID * byte) list) =
+    db.WriteEvents None inputEvents
 
-    let (actualEvents, lc) = 
+    let (outputEvents, lc) = 
         db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
 
-    es = actualEvents
+    if inputEvents <> outputEvents then
+        eprintfn "input events: %A" inputEvents
+        eprintfn "output events: %A" outputEvents
+        false
+    else 
+        true
+        
 
 Check.One(config, ``storing events locally is idempotent``)
