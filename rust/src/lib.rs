@@ -43,35 +43,45 @@ mod event {
 	}
 }
 
-trait Address<E> {
-	// TODO: timeout callback?
-	fn send(&self, msg: Message<E>);
+/// Basically any kind of unique identifier.
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
+pub struct Address(Box<[u8]>);
+
+impl From<&[u8]> for Address {
+    fn from(bytes: &[u8]) -> Self {
+        Address(bytes.into())
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for Address {
+    fn from(bytes: [u8; N]) -> Self {
+        Address(bytes.into())
+    }
 }
 
 /// All of these must be idempotent
 pub enum Message<E> {
-	SyncWith(Box<dyn Address<E>>),
+	SyncWith(Address),
 	SendEvents {
 		since: time::Transaction<clock::Logical>,
-		to_addr: Box<dyn Address<E>>,
+		remote_addr: Address,
 	},
 	StoreEvents {
-		from: Option<(Box<dyn Address<E>>, time::Transaction<clock::Logical>)>,
+		from: Option<(Address, time::Transaction<clock::Logical>)>,
 		events: Box<[(event::Id, E)]>,
 	},
 }
 
+/// At this level an address is just a unique array of bytes
 #[derive(Debug)]
-pub struct Database<Addr, E> {
+#[cfg_attr(test, derive(Clone))]
+pub struct Database<E> {
 	events: BTreeMap<event::Id, E>,
 	append_log: Vec<event::Id>,
-	version_vector: BTreeMap<Addr, time::Transaction<clock::Logical>>,
+	version_vector: BTreeMap<Address, time::Transaction<clock::Logical>>,
 }
 
-impl<Addr, E> Database<Addr, E> where
-	Addr: Ord + Copy, 
-	E: Copy
-{
+impl<E: Copy> Database<E> {
 	fn new() -> Self {
 		Self {
 			events: BTreeMap::new(),
@@ -80,17 +90,13 @@ impl<Addr, E> Database<Addr, E> where
 		}
 	}
 
-	fn event_matching_id(&self, id: &event::Id) -> Option<(event::Id, E)> {
-		self.events.get_key_value(id).map(|(&k, &v)| (k, v))
-	}
-
 	pub fn transaction_logical_clock(
 		&self,
-		addr: Addr,
+		addr: &Address,
 	) -> time::Transaction<clock::Logical> {
 		*self
 			.version_vector
-			.get(&addr)
+			.get(addr)
 			.unwrap_or(&time::Transaction(clock::LOGICAL_EPOCH))
 	}
 
@@ -102,7 +108,9 @@ impl<Addr, E> Database<Addr, E> where
 
 		let events: Box<[(event::Id, E)]> = event_ids
 			.iter()
-			.flat_map(|id| self.event_matching_id(id))
+			.flat_map(|id| {
+				self.events.get_key_value(id).map(|(&k, &v)| (k, v))
+			})
 			.collect();
 
 		(events, time::Transaction(self.append_log.len()))
@@ -110,7 +118,7 @@ impl<Addr, E> Database<Addr, E> where
 
 	pub fn write_events(
 		&mut self,
-		from: Option<(Addr, time::Transaction<clock::Logical>)>,
+		from: Option<(Address, time::Transaction<clock::Logical>)>,
 		new_events: &[(event::Id, E)],
 	) {
 		if let Some((addr, lc)) = from {
@@ -124,17 +132,47 @@ impl<Addr, E> Database<Addr, E> where
 	}
 }
 
-pub struct Replica<E> {
-	addr: Box<dyn Address<E>>,
-	db: Database<Box<dyn Address<E>>, E>
+pub trait Ether<E> {
+	fn send(&self, msg: Message<E>, addr: Address);
 }
 
-impl<E> Replica<E> {
-	pub fn send(&self, msg: Message<E>) {
+#[cfg_attr(test, derive(Clone))]
+pub struct Replica<E> {
+	addr: Address,
+	// Sending messages to an address is late bound.
+	// Rerefence counted purely to clone it in tests. not a good reason??
+	ether: std::rc::Rc<dyn Ether<E>>,
+	db: Database<E>
+}
+
+impl<E: Copy> Replica<E> {
+	pub fn new(addr: Address, ether: std::rc::Rc<dyn Ether<E>>) -> Self {
+		let db = Database::new();
+		Self {addr, ether: ether, db}
+	}
+
+	pub fn send(&mut self, msg: Message<E>) {
 		match msg {
-			Message::SendEvents { since, to_addr } => {
-				let es =self.db.read_events(since);
-			}
+			Message::SendEvents { since, remote_addr } => {
+				let (events, t) =self.db.read_events(since);
+
+				let outgoing_msg = Message::StoreEvents {
+					from: Some((self.addr.clone(), t)), 
+					events
+				};
+
+				self.ether.send(outgoing_msg, remote_addr);
+			},
+			Message::SyncWith(remote_addr) => {
+				let outgoing_msg = Message::SendEvents {
+					since: self.db.transaction_logical_clock(&remote_addr), 
+					remote_addr: self.addr.clone()
+				};
+
+				self.ether.send(outgoing_msg, remote_addr);
+			},
+			Message::StoreEvents { from, events } =>
+				self.db.write_events(from, &events)
 		}
 	}
 }
@@ -153,18 +191,48 @@ mod tests {
 		prop::collection::vec((arb_event_id(), any::<u8>()), 0..=100)
 	}
 
-	fn arb_db() -> impl Strategy<Value = Database::<uuid::Uuid, u8>> {
+	fn arb_db() -> impl Strategy<Value = Database<u8>> {
 		arb_events().prop_map(|es| {
-			let mut db = Database::<uuid::Uuid, u8>::new();
+			let mut db = Database::<u8>::new();
 			db.write_events(None, &es);
 			db
 		})
 	}
 
+	fn arb_address() -> impl Strategy<Value = Address> {
+		any::<[u8; 16]>().prop_map(|bytes| Address::from(bytes))
+	}
+
+
+	struct Ether(BTreeMap<Address, Replica<u8>>);
+	
+	impl<const N: usize> From<[Replica<u8>; N]> for Ether {
+		fn from(replicas: [Replica<u8>; N]) -> Self {
+			let tuples = replicas.into_iter().map(|r| (r.addr.clone(), r));
+			Self(BTreeMap::from_iter(tuples))
+    	}
+	}
+
+	impl Ether {
+		fn send(&mut self, addr: Address, msg: Message<u8>) {
+			let replica = self.0.get_mut(&addr)
+				.expect("Haven't tested missing replicas yet");
+
+			replica.send(msg);
+		}
+	}
+
+	// fn arb_replica() -> impl Strategy<Value = Replica<u8>> {
+	// 	arb_db().prop_map(|db| {
+	// 		let ether = Ether::from([])
+	// 		Replica::new()
+	// 	})
+	// }
+
 	proptest! {
 		#[test]
 		fn can_read_and_write_events(events in arb_events()) {
-			let mut db = Database::<uuid::Uuid, u8>::new();
+			let mut db = Database::<u8>::new();
 			db.write_events(None, &events);
 
 			let (recorded_events, _) = 
@@ -177,10 +245,11 @@ mod tests {
 		fn merging_is_idempotent(db1 in arb_db(), db2 in arb_db()) {
 			let (id1, id2) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
 
-			db2.transaction_logical_clock(id1);
-			db2.read_events(db1.transaction_logical_clock(id2));
-			
+			let id1: Address = Address::from(*uuid::Uuid::new_v4().as_bytes());
+			let id2: Address = Address::from(*uuid::Uuid::new_v4().as_bytes());
 
+
+		
 		}
 	}
 }
