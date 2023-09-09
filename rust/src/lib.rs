@@ -43,35 +43,30 @@ mod event {
 	}
 }
 
-trait Address<E> {
-	// TODO: timeout callback?
-	fn send(&self, msg: Message<E>);
-}
+type Address = Box<[u8]>;
 
 /// All of these must be idempotent
 pub enum Message<E> {
-	SyncWith(Box<dyn Address<E>>),
+	SyncWith(Address),
 	SendEvents {
 		since: time::Transaction<clock::Logical>,
-		to_addr: Box<dyn Address<E>>,
+		remote_addr: Address,
 	},
 	StoreEvents {
-		from: Option<(Box<dyn Address<E>>, time::Transaction<clock::Logical>)>,
+		from: Option<(Address, time::Transaction<clock::Logical>)>,
 		events: Box<[(event::Id, E)]>,
 	},
 }
 
+/// At this level an address is just a unique array of bytes
 #[derive(Debug)]
-pub struct Database<Addr, E> {
+pub struct Database<E> {
 	events: BTreeMap<event::Id, E>,
 	append_log: Vec<event::Id>,
-	version_vector: BTreeMap<Addr, time::Transaction<clock::Logical>>,
+	version_vector: BTreeMap<Address, time::Transaction<clock::Logical>>,
 }
 
-impl<Addr, E> Database<Addr, E> where
-	Addr: Ord + Copy, 
-	E: Copy
-{
+impl<E: Copy> Database<E> {
 	fn new() -> Self {
 		Self {
 			events: BTreeMap::new(),
@@ -86,11 +81,11 @@ impl<Addr, E> Database<Addr, E> where
 
 	pub fn transaction_logical_clock(
 		&self,
-		addr: Addr,
+		addr: &[u8],
 	) -> time::Transaction<clock::Logical> {
 		*self
 			.version_vector
-			.get(&addr)
+			.get(addr)
 			.unwrap_or(&time::Transaction(clock::LOGICAL_EPOCH))
 	}
 
@@ -110,7 +105,7 @@ impl<Addr, E> Database<Addr, E> where
 
 	pub fn write_events(
 		&mut self,
-		from: Option<(Addr, time::Transaction<clock::Logical>)>,
+		from: Option<(Address, time::Transaction<clock::Logical>)>,
 		new_events: &[(event::Id, E)],
 	) {
 		if let Some((addr, lc)) = from {
@@ -125,16 +120,42 @@ impl<Addr, E> Database<Addr, E> where
 }
 
 pub struct Replica<E> {
-	addr: Box<dyn Address<E>>,
-	db: Database<Box<dyn Address<E>>, E>
+	addr: Address,
+	send_to: Box<dyn Fn(Address, Message<E>)>,
+	db: Database<E>
 }
 
-impl<E> Replica<E> {
-	pub fn send(&self, msg: Message<E>) {
+impl<E: Copy> Replica<E> {
+	pub fn new(addr: Address, send_to: Box<dyn Fn(Address, Message<E>)>) -> Self {
+		let db = Database::new();
+		Self {addr, send_to, db}
+	}
+
+	pub fn send(&mut self, msg: Message<E>) {
 		match msg {
-			Message::SendEvents { since, to_addr } => {
-				let es =self.db.read_events(since);
+			Message::SendEvents { since, remote_addr } => {
+				let (events, t) =self.db.read_events(since);
+
+				let outgoing_msg = Message::StoreEvents {
+					from: Some((self.addr.clone(), t)), 
+					events
+				};
+
+				(self.send_to)(remote_addr, outgoing_msg);
+			},
+			Message::SyncWith(remote_addr) => {
+				let outgoing_msg = Message::SendEvents {
+					since: self.db.transaction_logical_clock(&remote_addr), 
+					remote_addr: self.addr.clone()
+				};
+
+				(self.send_to)(remote_addr, outgoing_msg);
+			},
+			Message::StoreEvents { from, events } => {
+
+				self.db.write_events(from, &events);
 			}
+
 		}
 	}
 }
@@ -153,9 +174,9 @@ mod tests {
 		prop::collection::vec((arb_event_id(), any::<u8>()), 0..=100)
 	}
 
-	fn arb_db() -> impl Strategy<Value = Database::<uuid::Uuid, u8>> {
+	fn arb_db() -> impl Strategy<Value = Database<u8>> {
 		arb_events().prop_map(|es| {
-			let mut db = Database::<uuid::Uuid, u8>::new();
+			let mut db = Database::<u8>::new();
 			db.write_events(None, &es);
 			db
 		})
@@ -164,7 +185,7 @@ mod tests {
 	proptest! {
 		#[test]
 		fn can_read_and_write_events(events in arb_events()) {
-			let mut db = Database::<uuid::Uuid, u8>::new();
+			let mut db = Database::<u8>::new();
 			db.write_events(None, &events);
 
 			let (recorded_events, _) = 
@@ -177,8 +198,8 @@ mod tests {
 		fn merging_is_idempotent(db1 in arb_db(), db2 in arb_db()) {
 			let (id1, id2) = (uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
 
-			db2.transaction_logical_clock(id1);
-			db2.read_events(db1.transaction_logical_clock(id2));
+			db2.transaction_logical_clock(id1.as_bytes());
+			db2.read_events(db1.transaction_logical_clock(id1.as_bytes()));
 		}
 	}
 }
