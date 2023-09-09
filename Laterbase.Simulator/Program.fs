@@ -3,6 +3,7 @@ open System.Collections.Generic
 open System.Diagnostics.Tracing
 open System.Threading.Tasks
 
+(*
 open Laterbase.Core
 open Laterbase.Simulated
 /// Deterministic Simulation Tester for Laterbase
@@ -43,3 +44,4 @@ let main args =
         printfn "%A miliseconds elapsed" t
 
     0
+*)

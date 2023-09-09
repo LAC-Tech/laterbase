@@ -54,6 +54,7 @@ type Address<'e>(bytes: byte array) =
     member _.Bytes = bytes
 
     abstract Send: msg: Message<'e> -> unit
+    abstract CreateReplica: unit -> Replica<'e>
 
     override this.Equals(obj) =
         match obj with
@@ -75,7 +76,7 @@ and Message<'e> =
         events:  (Event.ID * 'e) list
 
 /// At this point we know nothing about the address, it's just an ID
-type Database<'e>(addr: Address<'e>) =
+and Database<'e>() =
     let events = SortedDictionary<Event.ID, 'e>()
     let appendLog = ResizeArray<Event.ID>()
     let versionVector =
@@ -115,15 +116,11 @@ type Database<'e>(addr: Address<'e>) =
             [for e in events -> $"({e.Key}, {e.Value})" ]
             |> String.concat ";"
 
-        [
-            "DATABASE";
-            $"- Address = {addr}";
-            $"- Events = [{es}]"
-        ] |> String.concat "\n"
+        ["DATABASE"; $"- Events = [{es}]"] |> String.concat "\n"
 
 /// A replica is a database backed replica of the events, as well as an Actor
-type Replica<'e>(addr: Address<'e>) =
-    let db = Database(addr)
+and Replica<'e>(addr: Address<'e>) =
+    let db = Database()
     member _.Address = addr
 
     member this.Send<'e> msg =

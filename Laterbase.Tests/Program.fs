@@ -8,20 +8,29 @@ Console.Clear ()
 type EventVal = byte
 
 // Everything gets sent everywhere immediately with no isses :)
-type ReplicaFactory<'e>() =
+type AddressFactory<'e>() =
     let ether = SortedDictionary<byte array, Replica<'e>>()
-    member _.Create() =
-        let addr = { new Address<_>(Guid().ToByteArray()) with
-            override this.Send(msg) = 
+    member _.Create(randBytes) =
+        { new Address<_>(randBytes) with
+            override this.Send msg = 
                 match ether |> dictGet (this.Bytes) with
                 | Some replica -> replica.Send msg
                 | _ -> failwith "TODO: testing missing addresses"
+            override this.CreateReplica() = 
+                let r = Replica(this)
+                ether.Add(this.Bytes, r)
+                r
         }
 
-        let replica = Replica(addr)
-        ether.Add(addr.Bytes, replica)
+let gen16Bytes = Arb.generate<byte> |> Gen.arrayOfLength 16
 
-        replica
+let genAddrPair =
+    let addressFactory = AddressFactory<byte>()
+    Gen.two gen16Bytes 
+    |> Gen.map (fun (bs1, bs2) -> (
+        addressFactory.Create bs1,
+        addressFactory.Create bs2
+    ))
 
 let genLogicalClock = 
     Arb.generate<int> |> Gen.map (abs >> Clock.Logical.FromInt)
