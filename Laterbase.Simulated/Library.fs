@@ -6,6 +6,7 @@ open System.Threading.Tasks
 
 open Laterbase.Core
 
+(*
 type Ether<'e> = SortedDictionary<Guid, Replica<'e>>
 
 type Address<'e>(rng: Random, ether: Ether<'e>) =
@@ -36,3 +37,4 @@ type AddressFactory<'e>(seed: int) =
         let addr = Address<'e> (rng, ether)
         ether[addr.Id] <- Replica addr
         addr
+*)
