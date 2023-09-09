@@ -134,9 +134,11 @@ impl<E: Copy> Database<E> {
 
 pub trait Ether<E> {
 	fn send(&self, msg: Message<E>, addr: Address);
+	fn add(&mut self, replica: Replica<E>);
 }
 
 #[cfg_attr(test, derive(Clone))]
+#[derive(Debug)]
 pub struct Replica<E> {
 	addr: Address,
 	// Sending messages to an address is late bound.
@@ -146,9 +148,12 @@ pub struct Replica<E> {
 }
 
 impl<E: Copy> Replica<E> {
-	pub fn new(addr: Address, ether: std::rc::Rc<dyn Ether<E>>) -> Self {
+	pub fn new(
+		addr: Address,
+		ether: std::rc::Rc<dyn Ether<E>>
+	) -> Self {
 		let db = Database::new();
-		Self {addr, ether: ether, db}
+		Self {addr, ether, db}
 	}
 
 	pub fn send(&mut self, msg: Message<E>) {
@@ -161,7 +166,8 @@ impl<E: Copy> Replica<E> {
 					events
 				};
 
-				self.ether.send(outgoing_msg, remote_addr);
+				self.send(outgoing_msg, remote_addr);
+				(self.send_to)(remote_addr, outgoing_msg);
 			},
 			Message::SyncWith(remote_addr) => {
 				let outgoing_msg = Message::SendEvents {
@@ -169,7 +175,7 @@ impl<E: Copy> Replica<E> {
 					remote_addr: self.addr.clone()
 				};
 
-				self.ether.send(outgoing_msg, remote_addr);
+				(self.send_to)(remote_addr, outgoing_msg);
 			},
 			Message::StoreEvents { from, events } =>
 				self.db.write_events(from, &events)
@@ -203,23 +209,24 @@ mod tests {
 		any::<[u8; 16]>().prop_map(|bytes| Address::from(bytes))
 	}
 
+	fn arb_address_pair() -> impl Strategy<Value = (Replica<u8>, Replica<u8>)> {
+		let mut ether = BTreeMap::<Address, Replica<u8>>::new();
 
-	struct Ether(BTreeMap<Address, Replica<u8>>);
-	
-	impl<const N: usize> From<[Replica<u8>; N]> for Ether {
-		fn from(replicas: [Replica<u8>; N]) -> Self {
-			let tuples = replicas.into_iter().map(|r| (r.addr.clone(), r));
-			Self(BTreeMap::from_iter(tuples))
-    	}
-	}
+		let send_to = |addr, msg| {
+			let r = ether
+				.get_mut(&addr)
+				.expect("TODO: test 'replica not found' semantics");
 
-	impl Ether {
-		fn send(&mut self, addr: Address, msg: Message<u8>) {
-			let replica = self.0.get_mut(&addr)
-				.expect("Haven't tested missing replicas yet");
+			r.send(msg);
+		};
 
-			replica.send(msg);
-		}
+		(arb_address(), arb_address()).prop_map(move |(addr1, addr2)| {
+			let r1 = Replica::new(addr1, std::rc::Rc::from(send_to));
+			let r2 = Replica::new(addr2, std::rc::Rc::from(send_to));
+
+			ether.extend([(addr1, r1), (addr2, r2)]);
+			(r1, r2)
+		})
 	}
 
 	// fn arb_replica() -> impl Strategy<Value = Replica<u8>> {
