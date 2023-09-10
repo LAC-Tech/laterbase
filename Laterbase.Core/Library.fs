@@ -38,11 +38,14 @@ module Event =
     /// them the physical valid time. This is so clients can generate their own
     /// IDs.
     /// TODO: make sure the physical time is not greater than current time.
-    type ID = Ulid
-    /// timestamp - milliseconds since epoch
-    /// randonness - 10 random bytes
-    let createID (timestamp: int64<Time.ms>) (randomness: ReadOnlySpan<byte>) =
-        Ulid(int64 timestamp, randomness)
+    type ID =
+        struct
+            val ulid: Ulid
+            new (timestamp: int64<Time.ms>, randomness: ReadOnlySpan<byte>) =
+                let ulid = Ulid(int64 timestamp, randomness)
+                { ulid = ulid }
+        end
+
 
 // Interface instead of a function so it can be compared
 [<AbstractClass>]

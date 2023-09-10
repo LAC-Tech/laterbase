@@ -30,6 +30,8 @@ type ReplicaFactory<'e>() =
 
 let gen16Bytes = Arb.generate<byte> |> Gen.arrayOfLength 16
 
+//let genUlid = Arb.generate<byte> |> Gen.
+
 let genReplicaPair =
     let replicaFactory = ReplicaFactory<byte>()
     let createPopulatedReplicas (bs1, bs2) (es1, es2) =
@@ -47,7 +49,7 @@ let genLogicalClock =
 
 let genEventID =
     Gen.map2 
-        (fun ts (bytes: byte array) -> Event.createID ts (ReadOnlySpan bytes))
+        (fun ts (bytes: byte array) -> Event.ID(ts, (ReadOnlySpan bytes)))
         (Arb.generate<int64<Time.ms>> |> Gen.map abs)
         (Arb.generate<byte> |> Gen.arrayOfLength 10)
 
