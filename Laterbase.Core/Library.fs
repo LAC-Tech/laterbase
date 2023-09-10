@@ -70,7 +70,7 @@ type Address<'e>(bytes: byte array) =
 and Message<'e> =
     | SyncWith of Address<'e>
     | SendEvents of 
-        since : Time.Transaction<Clock.Logical> * toAddr: Address<'e>
+        since : Time.Transaction<Clock.Logical> * destAddr: Address<'e>
     | StoreEvents of 
         from: (Address<'e> * Time.Transaction<Clock.Logical>) option *
         events:  (Event.ID * 'e) list
@@ -119,22 +119,16 @@ and Database<'e>() =
         ["DATABASE"; $"- Events = [{es}]"] |> String.concat "\n"
 
 /// A replica is a database backed replica of the events, as well as an Actor
-and Replica<'e>(addr: Address<'e>) =
-    let db = Database()
+and Replica<'e>(addr: Address<'e>, db: Database<'e>) =
     member _.Address = addr
 
     member this.Send<'e> msg =
         match msg with
         | SyncWith remoteAddr ->
-            let outgoingMsg = SendEvents (
-                since = db.GetLogicalClock remoteAddr,
-                toAddr = this.Address
-            )
-            remoteAddr.Send outgoingMsg
-        | SendEvents (since, toAddr) ->
+            SendEvents (db.GetLogicalClock remoteAddr, this.Address)
+            |> remoteAddr.Send
+        | SendEvents (since, destAddr) ->
             let (events, t) = db.ReadEvents since
-            let outgoingMsg = 
-                StoreEvents (from = Some (this.Address, t), events = events)
-            toAddr.Send outgoingMsg
-        | StoreEvents (from, events) ->
-            db.WriteEvents from events
+            StoreEvents(Some(this.Address, t), events) 
+            |> destAddr.Send
+        | StoreEvents (from, events) -> db.WriteEvents from events
