@@ -1,10 +1,27 @@
 ﻿open FsCheck
 open Laterbase.Core
 open System
+open System.Collections.Generic
 
 Console.Clear ()
 
 type EventVal = byte
+
+// Everything gets sent everywhere immediately with no isses :)
+type ReplicaFactory<'e>() =
+    let ether = SortedDictionary<byte array, Replica<'e>>()
+    member _.Create() =
+        let addr = { new Address<_>(Guid().ToByteArray()) with
+            override this.Send(msg) = 
+                match ether |> dictGet (this.Bytes) with
+                | Some replica -> replica.Send msg
+                | _ -> failwith "TODO: testing missing addresses"
+        }
+
+        let replica = Replica(addr)
+        ether.Add(addr.Bytes, replica)
+
+        replica
 
 let genLogicalClock = 
     Arb.generate<int> |> Gen.map (abs >> Clock.Logical.FromInt)
@@ -48,20 +65,14 @@ let idsAreUnique (eventIds: List<Event.ID>) =
 
 Check.One(config, idsAreUnique)
 
-let ``storing events locally is idempotent`` (db: Database<EventVal, Guid>) (es: (Event.ID * byte) list) =
+let ``storing events locally is idempotent`` 
+    (db: Database<EventVal, Guid>) 
+    (es: (Event.ID * byte) list) =
     db.WriteEvents None es
 
     let (actualEvents, lc) = 
         db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
 
-    // We expect the database to have sorted them by key
-    let expectedEvents = es |> List.sortBy (fun (k, v) -> k)
-
-    if expectedEvents = actualEvents then
-        true
-    else   
-        eprintfn "actual: %A" actualEvents
-        eprintfn "expected: %A" expectedEvents
-        false
+    es = actualEvents
 
 Check.One(config, ``storing events locally is idempotent``)

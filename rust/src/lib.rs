@@ -143,17 +143,17 @@ pub struct Replica<E> {
 	addr: Address,
 	// Sending messages to an address is late bound.
 	// Rerefence counted purely to clone it in tests. not a good reason??
-	ether: std::rc::Rc<dyn Ether<E>>,
+	send_to: std::rc::Rc<dyn Fn(Address, Message<E>)>,
 	db: Database<E>
 }
 
 impl<E: Copy> Replica<E> {
 	pub fn new(
 		addr: Address,
-		ether: std::rc::Rc<dyn Ether<E>>
+		send_to: std::rc::Rc<dyn Fn(Address, Message<E>)>
 	) -> Self {
 		let db = Database::new();
-		Self {addr, ether, db}
+		Self {addr, send_to, db}
 	}
 
 	pub fn send(&mut self, msg: Message<E>) {
@@ -166,7 +166,6 @@ impl<E: Copy> Replica<E> {
 					events
 				};
 
-				self.send(outgoing_msg, remote_addr);
 				(self.send_to)(remote_addr, outgoing_msg);
 			},
 			Message::SyncWith(remote_addr) => {
@@ -210,11 +209,12 @@ mod tests {
 	}
 
 	fn arb_address_pair() -> impl Strategy<Value = (Replica<u8>, Replica<u8>)> {
-		let mut ether = BTreeMap::<Address, Replica<u8>>::new();
+		let mut ether = std::cell::RefCell::new(BTreeMap::<Address, Replica<u8>>::new());
 
 		let send_to = |addr, msg| {
 			let r = ether
-				.get_mut(&addr)
+				.get_mut()
+				.get(&addr)
 				.expect("TODO: test 'replica not found' semantics");
 
 			r.send(msg);
@@ -224,7 +224,7 @@ mod tests {
 			let r1 = Replica::new(addr1, std::rc::Rc::from(send_to));
 			let r2 = Replica::new(addr2, std::rc::Rc::from(send_to));
 
-			ether.extend([(addr1, r1), (addr2, r2)]);
+			ether.get_mut().extend([(addr1, r1), (addr2, r2)]);
 			(r1, r2)
 		})
 	}

@@ -49,23 +49,37 @@ module Event =
         Ulid(int64 timestamp, randomness)
 
 // Interface instead of a function so it can be compared
-type IAddress<'e> =
-    abstract Send: msg: Message<'e> -> Result<unit, Task<string>>
+[<AbstractClass>]
+type Address<'e>(bytes: byte array) =
+    member _.Bytes = bytes
+
+    abstract Send: msg: Message<'e> -> unit
+
+    override this.Equals(obj) =
+        match obj with
+        | :? Address<'e> as other -> this.Bytes = other.Bytes
+        | _ -> false
+
+    override this.GetHashCode() = this.Bytes.GetHashCode()
+
+    interface IComparable<Address<'e>> with
+        member this.CompareTo(other) = compare this.Bytes other.Bytes
+
 // All of the messages must be idempotent
 and Message<'e> =
-    | SyncWith of IAddress<'e>
+    | SyncWith of Address<'e>
     | SendEvents of 
-        since : Time.Transaction<Clock.Logical> * toAddr: IAddress<'e>
+        since : Time.Transaction<Clock.Logical> * toAddr: Address<'e>
     | StoreEvents of 
-        from: (IAddress<'e> * Time.Transaction<Clock.Logical>) option *
+        from: (Address<'e> * Time.Transaction<Clock.Logical>) option *
         events:  (Event.ID * 'e) list
 
 /// At this point we know nothing about the address, it's just an ID
-type Database<'e, 'addr>(addr: 'addr) =
+type Database<'e>(addr: Address<'e>) =
     let events = SortedDictionary<Event.ID, 'e>()
     let appendLog = ResizeArray<Event.ID>()
     let versionVector =
-        SortedDictionary<'addr, Time.Transaction<Clock.Logical>>()
+        SortedDictionary<Address<'e>, Time.Transaction<Clock.Logical>>()
     
     let event_matching_id eventId =
         events |> dictGet eventId |> Option.map (fun v -> (eventId, v))
@@ -107,7 +121,7 @@ type Database<'e, 'addr>(addr: 'addr) =
         ] |> String.concat "\n"
 
 /// A replica is a database backed replica of the events, as well as an Actor
-type Replica<'e>(addr: IAddress<'e>) =
+type Replica<'e>(addr: Address<'e>) =
     let db = Database(addr)
     member _.Address = addr
 
