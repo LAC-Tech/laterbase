@@ -7,18 +7,6 @@ Console.Clear ()
 
 type EventVal = byte
 
-type PerfectAddress<'e>(
-    randBytes: byte array,
-    ether: SortedDictionary<byte array, Replica<'e>>
-) =
-    inherit Address<'e>(randBytes)
-    
-    override this.Send msg = 
-        match ether |> dictGet (this.Bytes) with
-        | Some replica -> replica.Send msg
-        | _ -> failwith "TODO: testing missing addresses"
-
-
 // Everything gets sent everywhere immediately with no isses :)
 type ReplicaFactory<'e>() =
     let ether = SortedDictionary<byte array, Replica<'e>>()

@@ -45,31 +45,15 @@ module Event =
                 { ulid = ulid }
         end
 
-
-// Interface instead of a function so it can be compared
-[<AbstractClass>]
-type Address<'e>(bytes: byte array) =
-    member _.Bytes = bytes
-
-    abstract Send: msg: Message<'e> -> unit
-
-    override this.Equals(obj) =
-        match obj with
-        | :? Address<'e> as other -> this.Bytes = other.Bytes
-        | _ -> false
-
-    override this.GetHashCode() = this.Bytes.GetHashCode()
-
-    interface IComparable<Address<'e>> with
-        member this.CompareTo(other) = compare this.Bytes other.Bytes
+type Address<'e> =
+    | Memory of Database<'e>
 
 // All of the messages must be idempotent
 and Message<'e> =
-    | SyncWith of Address<'e>
-    | SendEvents of 
-        since : Time.Transaction<Clock.Logical> * destAddr: Address<'e>
+    | SyncWith
+    | SendEvents of Time.Transaction<Clock.Logical>
     | StoreEvents of 
-        from: (Address<'e> * Time.Transaction<Clock.Logical>) option *
+        from: (Time.Transaction<Clock.Logical>) option *
         events:  (Event.ID * 'e) list
 
 /// At this point we know nothing about the address, it's just an ID
@@ -87,6 +71,8 @@ and Database<'e>() =
         |> dictGet addr
         |> Option.defaultValue (Time.Transaction Clock.Logical.Epoch)
 
+    
+
     /// Returns events in transaction order, ie the order they were written
     member _.ReadEvents (since: Time.Transaction<Clock.Logical>) =
         let (Time.Transaction since) = since
@@ -100,9 +86,8 @@ and Database<'e>() =
         (events, Time.Transaction localLogicalTime)
 
     member _.WriteEvents from newEvents =
-        let updateClock (addr, lc) = versionVector[addr] <- lc
         // If it came from another replica, update version vec to reflect this
-        from |> Option.iter updateClock
+        from |> Option.iter (fun (addr, lc) -> versionVector[addr] <- lc)
 
         for (k, v) in newEvents do
             events.Add (k, v)
@@ -115,18 +100,41 @@ and Database<'e>() =
 
         ["DATABASE"; $"- Events = [{es}]"] |> String.concat "\n"
 
-/// A replica is a database backed replica of the events, as well as an Actor
-and Replica<'e>(addr: Address<'e>, db: Database<'e>) =
-    member _.Address = addr
-    member _.Database = db;
+/// src -> dest -> msg
+type Sender<'e> = Address<'e> -> Address<'e> -> Message<'e> -> unit
 
-    member this.Send<'e> msg =
-        match msg with
-        | SyncWith remoteAddr ->
+let send srcAddr destAddr msg =
+    match (srcAddr, destAddr) with
+    | (Memory srcDb, Memory remoteDb) ->
+        match msg with 
+        | SyncWith ->
+            let since = srcDb.GetLogicalClock destAddr
+            let (events, lc) = srcDb.ReadEvents since
+
+            remoteDb.WriteEvents (Some (srcAddr, lc)) events
+
             SendEvents (this.Database.GetLogicalClock remoteAddr, this.Address)
-            |> remoteAddr.Send
+            |> send remoteAddr
         | SendEvents (since, destAddr) ->
             let (events, t) = this.Database.ReadEvents since
             StoreEvents(Some(this.Address, t), events) 
-            |> destAddr.Send
+            |> send destAddr
+        | StoreEvents (from, events) -> this.Database.WriteEvents from events
+
+/// A replica is a database backed replica of the events, as well as an Actor
+type Replica<'e>(addr: Address<'e>, db: Database<'e>) =
+    member _.Address = addr
+    member _.Database = db;
+
+    member this.Send<'e> sender msg =
+        let send = sender addr
+
+        match msg with
+        | SyncWith remoteAddr ->
+            SendEvents (this.Database.GetLogicalClock remoteAddr, this.Address)
+            |> send remoteAddr
+        | SendEvents (since, destAddr) ->
+            let (events, t) = this.Database.ReadEvents since
+            StoreEvents(Some(this.Address, t), events) 
+            |> send destAddr
         | StoreEvents (from, events) -> this.Database.WriteEvents from events
