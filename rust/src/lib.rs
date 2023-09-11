@@ -43,33 +43,22 @@ mod event {
 	}
 }
 
-/// Basically any kind of unique identifier.
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
-pub struct Address(Box<[u8]>);
-
-impl From<&[u8]> for Address {
-    fn from(bytes: &[u8]) -> Self {
-        Address(bytes.into())
-    }
-}
-
-impl<const N: usize> From<[u8; N]> for Address {
-    fn from(bytes: [u8; N]) -> Self {
-        Address(bytes.into())
-    }
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Address<E> {
+	Memory(Box<Database<E>>)
 }
 
 /// All of these must be idempotent
 pub enum Message<E> {
-	SyncWith(Address),
+	SyncWith(Address<E>),
 	SendEvents {
 		since: time::Transaction<clock::Logical>,
-		remote_addr: Address,
+		remote_addr: Address<E>
 	},
 	StoreEvents {
-		from: Option<(Address, time::Transaction<clock::Logical>)>,
+		from: Option<(Address<E>, time::Transaction<clock::Logical>)>,
 		events: Box<[(event::Id, E)]>,
-	},
+	}
 }
 
 /// At this level an address is just a unique array of bytes
@@ -78,7 +67,8 @@ pub enum Message<E> {
 pub struct Database<E> {
 	events: BTreeMap<event::Id, E>,
 	append_log: Vec<event::Id>,
-	version_vector: BTreeMap<Address, time::Transaction<clock::Logical>>,
+	version_vector:
+		BTreeMap<Address<E>, time::Transaction<clock::Logical>>
 }
 
 impl<E: Copy> Database<E> {
@@ -92,11 +82,11 @@ impl<E: Copy> Database<E> {
 
 	pub fn transaction_logical_clock(
 		&self,
-		addr: &Address,
+		addr: &Addr,
 	) -> time::Transaction<clock::Logical> {
 		*self
 			.version_vector
-			.get(addr)
+			.get(addr.as_bytes())
 			.unwrap_or(&time::Transaction(clock::LOGICAL_EPOCH))
 	}
 
@@ -118,11 +108,11 @@ impl<E: Copy> Database<E> {
 
 	pub fn write_events(
 		&mut self,
-		from: Option<(Address, time::Transaction<clock::Logical>)>,
+		from: Option<(Address<E>, time::Transaction<clock::Logical>)>,
 		new_events: &[(event::Id, E)],
 	) {
 		if let Some((addr, lc)) = from {
-			self.version_vector.insert(addr, lc);
+			self.version_vector.insert(addr.as_bytes().into(), lc);
 		}
 
 		for (k, v) in new_events.iter() {
@@ -132,28 +122,18 @@ impl<E: Copy> Database<E> {
 	}
 }
 
-pub trait Ether<E> {
-	fn send(&self, msg: Message<E>, addr: Address);
-	fn add(&mut self, replica: Replica<E>);
-}
-
 #[cfg_attr(test, derive(Clone))]
 #[derive(Debug)]
 pub struct Replica<E> {
-	addr: Address,
-	// Sending messages to an address is late bound.
-	// Rerefence counted purely to clone it in tests. not a good reason??
-	send_to: std::rc::Rc<dyn Fn(Address, Message<E>)>,
+	addr: Address<E>,
 	db: Database<E>
 }
 
 impl<E: Copy> Replica<E> {
-	pub fn new(
-		addr: Address,
-		send_to: std::rc::Rc<dyn Fn(Address, Message<E>)>
-	) -> Self {
+	pub fn new(addr: Address<E>) -> Self {
 		let db = Database::new();
-		Self {addr, send_to, db}
+		let addr = Box::from(addr);
+		Self {addr, db}
 	}
 
 	pub fn send(&mut self, msg: Message<E>) {
@@ -166,15 +146,15 @@ impl<E: Copy> Replica<E> {
 					events
 				};
 
-				(self.send_to)(remote_addr, outgoing_msg);
+				remote_addr.send(outgoing_msg);
 			},
 			Message::SyncWith(remote_addr) => {
 				let outgoing_msg = Message::SendEvents {
-					since: self.db.transaction_logical_clock(&remote_addr), 
+					since: self.db.transaction_logical_clock(remote_addr), 
 					remote_addr: self.addr.clone()
 				};
 
-				(self.send_to)(remote_addr, outgoing_msg);
+				remote_addr.send(outgoing_msg);
 			},
 			Message::StoreEvents { from, events } =>
 				self.db.write_events(from, &events)
@@ -209,11 +189,11 @@ mod tests {
 	}
 
 	fn arb_address_pair() -> impl Strategy<Value = (Replica<u8>, Replica<u8>)> {
-		let mut ether = std::cell::RefCell::new(BTreeMap::<Address, Replica<u8>>::new());
+		let ether = std::cell::RefCell::new(BTreeMap::<Address, Replica<u8>>::new());
 
 		let send_to = |addr, msg| {
 			let r = ether
-				.get_mut()
+				.borrow_mut()
 				.get(&addr)
 				.expect("TODO: test 'replica not found' semantics");
 
@@ -221,8 +201,8 @@ mod tests {
 		};
 
 		(arb_address(), arb_address()).prop_map(move |(addr1, addr2)| {
-			let r1 = Replica::new(addr1, std::rc::Rc::from(send_to));
-			let r2 = Replica::new(addr2, std::rc::Rc::from(send_to));
+			let r1 = Replica::new(addr1);
+			let r2 = Replica::new(addr2);
 
 			ether.get_mut().extend([(addr1, r1), (addr2, r2)]);
 			(r1, r2)
