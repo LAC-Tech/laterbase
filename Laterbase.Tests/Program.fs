@@ -7,40 +7,39 @@ Console.Clear ()
 
 type EventVal = byte
 
+type PerfectAddress<'e>(
+    randBytes: byte array,
+    ether: SortedDictionary<byte array, Replica<'e>>
+) =
+    inherit Address<'e>(randBytes)
+    
+    override this.Send msg = 
+        match ether |> dictGet (this.Bytes) with
+        | Some replica -> replica.Send msg
+        | _ -> failwith "TODO: testing missing addresses"
+
+
 // Everything gets sent everywhere immediately with no isses :)
-type AddressFactory<'e>() =
+type ReplicaFactory<'e>() =
     let ether = SortedDictionary<byte array, Replica<'e>>()
     member _.Create(randBytes) =
-        { new Address<_>(randBytes) with
-            override this.Send msg = 
-                match ether |> dictGet (this.Bytes) with
-                | Some replica -> replica.Send msg
-                | _ -> failwith "TODO: testing missing addresses"
-            override this.CreateReplica() = 
-                let r = Replica(this, Database())
-                ether.Add(this.Bytes, r)
-                r
-        }
+        let addr = PerfectAddress(randBytes, ether)
+        let db = Database()
+
+        Replica(addr, db)
 
 let gen16Bytes = Arb.generate<byte> |> Gen.arrayOfLength 16
 
 let genReplicaPair =
-    let addressFactory = AddressFactory<byte>()
-    let f (bs1, bs2) (es1, es2) =
-        let (addr1, addr2) = 
-            (addressFactory.Create bs1, addressFactory.Create bs2)
-
-
-        let (r1, r2) = (addr1.CreateReplica(), addr2.CreateReplica())
-
-        r1.Send(StoreEvents(None, es1))
-        r1.Send(StoreEvents(None, es2))
-
+    let replicaFactory = ReplicaFactory<byte>()
+    let createPopulatedReplicas (bs1, bs2) (es1, es2) =
+        let (r1, r2) = (replicaFactory.Create bs1, replicaFactory.Create bs2)
+        r1.Database.WriteEvents None es1
+        r2.Database.WriteEvents None es2
         (r1, r2)
-
-    
-    Gen.map2 f 
-        (Gen.two gen16Bytes) 
+        
+    Gen.map2 createPopulatedReplicas
+        (Gen.two gen16Bytes)
         Arb.generate<((Event.ID * byte) list * (Event.ID * byte) list)>
 
 let genLogicalClock = 

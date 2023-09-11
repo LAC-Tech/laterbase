@@ -33,15 +33,11 @@ module Clock =
         static member Epoch = Logical 0UL
     end
 
-(** 
- * IDs must be globally unique and orderable. They should contain within 
- * them the physical valid time. This is so clients can generate their own
- * IDs.
- * 
- * TODO: make sure the physical time is not greater than current time.
- *)
-
 module Event = 
+    /// IDs must be globally unique and orderable. They should contain within
+    /// them the physical valid time. This is so clients can generate their own
+    /// IDs.
+    /// TODO: make sure the physical time is not greater than current time.
     type ID = Ulid
     /// timestamp - milliseconds since epoch
     /// randonness - 10 random bytes
@@ -54,7 +50,6 @@ type Address<'e>(bytes: byte array) =
     member _.Bytes = bytes
 
     abstract Send: msg: Message<'e> -> unit
-    abstract CreateReplica: unit -> Replica<'e>
 
     override this.Equals(obj) =
         match obj with
@@ -121,14 +116,15 @@ and Database<'e>() =
 /// A replica is a database backed replica of the events, as well as an Actor
 and Replica<'e>(addr: Address<'e>, db: Database<'e>) =
     member _.Address = addr
+    member _.Database = db;
 
     member this.Send<'e> msg =
         match msg with
         | SyncWith remoteAddr ->
-            SendEvents (db.GetLogicalClock remoteAddr, this.Address)
+            SendEvents (this.Database.GetLogicalClock remoteAddr, this.Address)
             |> remoteAddr.Send
         | SendEvents (since, destAddr) ->
-            let (events, t) = db.ReadEvents since
+            let (events, t) = this.Database.ReadEvents since
             StoreEvents(Some(this.Address, t), events) 
             |> destAddr.Send
-        | StoreEvents (from, events) -> db.WriteEvents from events
+        | StoreEvents (from, events) -> this.Database.WriteEvents from events
