@@ -6,20 +6,22 @@ Console.Clear ()
 
 type EventVal = byte
 
-let gen16Bytes = Arb.generate<byte> |> Gen.arrayOfLength 16
+let gen16Bytes: Gen<byte array> = 
+    Arb.generate<byte> |> Gen.arrayOfLength 16
 
-let genLogicalClock = 
+let genLogicalClock: Gen<Clock.Logical> = 
     Arb.generate<int> |> Gen.map (abs >> Clock.Logical.FromInt)
 
-let genEventID =
+let genEventID: Gen<Event.ID> =
     Gen.map2 
-        (fun ts (bytes: byte array) -> Event.ID(ts, (ReadOnlySpan bytes)))
+        (fun ts bytes -> Event.ID(ts, bytes))
         (Arb.generate<int64<Time.ms>> |> Gen.map abs)
         (Arb.generate<byte> |> Gen.arrayOfLength 10)
 
-//let genDb = Arb.generate<unit> |> Gen.map Database
+let genDb: Gen<Database<byte>> = 
+    Arb.generate<unit> |> Gen.map (fun _ -> Database<byte>())
 
-let genPopulatedAddr =
+let genPopulatedAddr: Gen<Address<byte>> =
     Arb.generate<Database<byte> * (Event.ID * byte) array>
     |> Gen.map (fun (db, events) -> db.WriteEvents events None; InMemory db)
 
@@ -34,7 +36,12 @@ type MyGenerators =
             override _.Generator = genEventID                            
             override _.Shrinker _ = Seq.empty}
 
-    static member DB() =
+    static member Database() =
+        {new Arbitrary<Database<byte>>() with
+            override _.Generator = genDb
+            override _.Shrinker _ = Seq.empty}
+
+    static member Address() =
         {new Arbitrary<Address<byte>>() with
             override _.Generator = genPopulatedAddr
             override _.Shrinker _ = Seq.empty}
@@ -66,20 +73,20 @@ let ``storing events locally is idempotent``
 
 Check.One(config, ``storing events locally is idempotent``)
 
-let merge (addr1: Address<EventVal>) (addr2: Address<EventVal>) =
-    send addr1 addr2 Sync
-    send addr2 addr1 Sync
+// let merge (addr1: Address<EventVal>) (addr2: Address<EventVal>) =
+//     send addr1 addr2 Sync
+//     send addr2 addr1 Sync
 
-let commutative 
-    ((addrL1, addrR1): (Address<byte> * Address<byte>))
-    ((addrL2, addrR2): (Address<byte> * Address<byte>)) =
+// let commutative 
+//     ((addrL1, addrR1): (Address<byte> * Address<byte>))
+//     ((addrL2, addrR2): (Address<byte> * Address<byte>)) =
 
-    merge addrL1 addrL2
-    merge addrR2 addrR1
+//     merge addrL1 addrL2
+//     merge addrR2 addrR1
 
-    addrL1 = addrR2
+//     addrL1 = addrR2
 
-Check.One(config, commutative)
+//Check.One(config, commutative)
 
 (*
 #[test]

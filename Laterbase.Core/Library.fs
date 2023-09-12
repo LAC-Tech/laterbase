@@ -40,9 +40,10 @@ module Event =
     type ID =
         struct
             val ulid: Ulid
-            new (timestamp: int64<Time.ms>, randomness: ReadOnlySpan<byte>) =
+            new (timestamp: int64<Time.ms>, randomness: byte array) =
                 let ulid = Ulid(int64 timestamp, randomness)
                 { ulid = ulid }
+            override self.ToString() = self.ulid.ToString()
         end
 
 type Address<'e> =
@@ -62,8 +63,7 @@ and Database<'e>() =
     // These are both internal members so I can use them for equality
     member internal _.Events = SortedDictionary<Event.ID, 'e>()
     member internal _.VersionVector =
-        SortedDictionary<Address<'e>, Time.Transaction<Clock.Logical>>()
-    
+        SortedDictionary<Address<'e>, Time.Transaction<Clock.Logical>>()    
 
     member self.GetLogicalClock addr =
         self.VersionVector
@@ -91,7 +91,7 @@ and Database<'e>() =
         from |> Option.iter (fun (addr, lc) -> self.VersionVector[addr] <- lc)
 
         for (k, v) in newEvents do
-            self.Events.Add (k, v)
+            self.Events[k] <- v
             appendLog.Add k
 
     override self.ToString() = 
@@ -99,7 +99,20 @@ and Database<'e>() =
             [for e in self.Events -> $"({e.Key}, {e.Value})" ]
             |> String.concat ";"
 
-        ["DATABASE"; $"- Events = [{es}]"] |> String.concat "\n"
+        let appendLogStr = 
+            [for id in appendLog -> $"{id}" ]
+            |> String.concat ";"
+
+        let vvStr =
+            [for v in self.VersionVector -> $"({v.Key}, {v.Value})" ]
+            |> String.concat ";"
+
+        [
+            "DATABASE"; 
+            $"- Events = [{es}]";
+            $"- Append Log = [{appendLogStr}]";
+            $"- Version Vector = [{vvStr}]"
+        ] |> String.concat "\n"
     
     override self.Equals(obj) =
         match obj with
@@ -107,6 +120,15 @@ and Database<'e>() =
             self.Events = other.Events && 
             self.VersionVector = other.VersionVector
         | _ -> false
+
+    override self.GetHashCode() =
+        let hash = 17;
+        let hash = hash * 23 * self.Events.GetHashCode()
+        let hash = hash * 23 * self.VersionVector.GetHashCode()
+
+        hash
+
+    
 
 /// src -> dest -> msg
 type Sender<'e> = Address<'e> -> Address<'e> -> Message<'e> -> unit
