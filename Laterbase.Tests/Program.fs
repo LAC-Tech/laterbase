@@ -63,8 +63,8 @@ let ``storing events locally is idempotent``
 Check.One(config, ``storing events locally is idempotent``)
 
 let merge (addr1: Address<EventVal>) (addr2: Address<EventVal>) =
-    send addr1 addr2 SyncWith
-    send addr2 addr1 SyncWith
+    send addr1 addr2 Sync
+    send addr2 addr1 Sync
 
 (*
 #[test]

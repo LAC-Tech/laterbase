@@ -50,7 +50,7 @@ type Address<'e> =
 
 // All of the messages must be idempotent
 and Message<'e> =
-    | SyncWith
+    | Sync
     | SendEvents of Time.Transaction<Clock.Logical>
     | StoreEvents of 
         from: (Time.Transaction<Clock.Logical>) option *
@@ -107,7 +107,7 @@ let send srcAddr destAddr msg =
     match (srcAddr, destAddr) with
     | (Memory localDb, Memory remoteDb) ->
         match msg with 
-        | SyncWith ->
+        | Sync ->
             let since = localDb.GetLogicalClock destAddr
             let (events, lc) = localDb.ReadEvents since
             remoteDb.WriteEvents events (Some (srcAddr, lc))
