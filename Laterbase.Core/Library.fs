@@ -85,7 +85,7 @@ and Database<'e>() =
         let localLogicalTime = appendLog.Count |> Clock.Logical.FromInt
         (events, Time.Transaction localLogicalTime)
 
-    member _.WriteEvents from newEvents =
+    member _.WriteEvents newEvents from =
         // If it came from another replica, update version vec to reflect this
         from |> Option.iter (fun (addr, lc) -> versionVector[addr] <- lc)
 
@@ -105,36 +105,16 @@ type Sender<'e> = Address<'e> -> Address<'e> -> Message<'e> -> unit
 
 let send srcAddr destAddr msg =
     match (srcAddr, destAddr) with
-    | (Memory srcDb, Memory remoteDb) ->
+    | (Memory localDb, Memory remoteDb) ->
         match msg with 
         | SyncWith ->
-            let since = srcDb.GetLogicalClock destAddr
-            let (events, lc) = srcDb.ReadEvents since
-
-            remoteDb.WriteEvents (Some (srcAddr, lc)) events
-
-            SendEvents (this.Database.GetLogicalClock remoteAddr, this.Address)
-            |> send remoteAddr
-        | SendEvents (since, destAddr) ->
-            let (events, t) = this.Database.ReadEvents since
-            StoreEvents(Some(this.Address, t), events) 
-            |> send destAddr
-        | StoreEvents (from, events) -> this.Database.WriteEvents from events
-
-/// A replica is a database backed replica of the events, as well as an Actor
-type Replica<'e>(addr: Address<'e>, db: Database<'e>) =
-    member _.Address = addr
-    member _.Database = db;
-
-    member this.Send<'e> sender msg =
-        let send = sender addr
-
-        match msg with
-        | SyncWith remoteAddr ->
-            SendEvents (this.Database.GetLogicalClock remoteAddr, this.Address)
-            |> send remoteAddr
-        | SendEvents (since, destAddr) ->
-            let (events, t) = this.Database.ReadEvents since
-            StoreEvents(Some(this.Address, t), events) 
-            |> send destAddr
-        | StoreEvents (from, events) -> this.Database.WriteEvents from events
+            let since = localDb.GetLogicalClock destAddr
+            let (events, lc) = localDb.ReadEvents since
+            remoteDb.WriteEvents events (Some (srcAddr, lc))
+        | SendEvents since ->
+            let (events, lc) = localDb.ReadEvents since
+            remoteDb.WriteEvents events (Some (srcAddr, lc))
+        | StoreEvents (from, events) -> 
+            from
+            |> Option.map (fun lc -> (srcAddr, lc))
+            |> remoteDb.WriteEvents events
