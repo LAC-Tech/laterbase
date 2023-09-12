@@ -17,7 +17,11 @@ let genEventID =
         (Arb.generate<int64<Time.ms>> |> Gen.map abs)
         (Arb.generate<byte> |> Gen.arrayOfLength 10)
 
-let genDb = Arb.generate<unit> |> Gen.map Database
+//let genDb = Arb.generate<unit> |> Gen.map Database
+
+let genPopulatedAddr =
+    Arb.generate<Database<byte> * (Event.ID * byte) array>
+    |> Gen.map (fun (db, events) -> db.WriteEvents events None; InMemory db)
 
 type MyGenerators = 
     static member LogicalClock() = 
@@ -31,8 +35,8 @@ type MyGenerators =
             override _.Shrinker _ = Seq.empty}
 
     static member DB() =
-        {new Arbitrary<Database<byte>>() with
-            override _.Generator = genDb
+        {new Arbitrary<Address<byte>>() with
+            override _.Generator = genPopulatedAddr
             override _.Shrinker _ = Seq.empty}
 
 let config = {
@@ -65,6 +69,17 @@ Check.One(config, ``storing events locally is idempotent``)
 let merge (addr1: Address<EventVal>) (addr2: Address<EventVal>) =
     send addr1 addr2 Sync
     send addr2 addr1 Sync
+
+let commutative 
+    ((addrL1, addrR1): (Address<byte> * Address<byte>))
+    ((addrL2, addrR2): (Address<byte> * Address<byte>)) =
+
+    merge addrL1 addrL2
+    merge addrR2 addrR1
+
+    addrL1 = addrR2
+
+Check.One(config, commutative)
 
 (*
 #[test]

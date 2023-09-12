@@ -46,7 +46,7 @@ module Event =
         end
 
 type Address<'e> =
-    | Memory of Database<'e>
+    | InMemory of Database<'e>
 
 // All of the messages must be idempotent
 and Message<'e> =
@@ -58,54 +58,62 @@ and Message<'e> =
 
 /// At this point we know nothing about the address, it's just an ID
 and Database<'e>() =
-    let events = SortedDictionary<Event.ID, 'e>()
     let appendLog = ResizeArray<Event.ID>()
-    let versionVector =
+    // These are both internal members so I can use them for equality
+    member internal _.Events = SortedDictionary<Event.ID, 'e>()
+    member internal _.VersionVector =
         SortedDictionary<Address<'e>, Time.Transaction<Clock.Logical>>()
     
-    let event_matching_id eventId =
-        events |> dictGet eventId |> Option.map (fun v -> (eventId, v))
 
-    member _.GetLogicalClock addr =
-        versionVector
+    member self.GetLogicalClock addr =
+        self.VersionVector
         |> dictGet addr
         |> Option.defaultValue (Time.Transaction Clock.Logical.Epoch)
 
-    
-
     /// Returns events in transaction order, ie the order they were written
-    member _.ReadEvents (since: Time.Transaction<Clock.Logical>) =
+    member self.ReadEvents (since: Time.Transaction<Clock.Logical>) =
         let (Time.Transaction since) = since
             
         let events = 
             appendLog.Skip (since.ToInt())
-            |> Seq.choose event_matching_id
+            |> Seq.choose (fun eventId -> 
+                self.Events
+                |> dictGet eventId
+                |> Option.map (fun v -> (eventId, v))
+            )
             |> Seq.toList
 
         let localLogicalTime = appendLog.Count |> Clock.Logical.FromInt
         (events, Time.Transaction localLogicalTime)
 
-    member _.WriteEvents newEvents from =
+    member self.WriteEvents newEvents from =
         // If it came from another replica, update version vec to reflect this
-        from |> Option.iter (fun (addr, lc) -> versionVector[addr] <- lc)
+        from |> Option.iter (fun (addr, lc) -> self.VersionVector[addr] <- lc)
 
         for (k, v) in newEvents do
-            events.Add (k, v)
+            self.Events.Add (k, v)
             appendLog.Add k
 
-    override _.ToString() = 
+    override self.ToString() = 
         let es = 
-            [for e in events -> $"({e.Key}, {e.Value})" ]
+            [for e in self.Events -> $"({e.Key}, {e.Value})" ]
             |> String.concat ";"
 
         ["DATABASE"; $"- Events = [{es}]"] |> String.concat "\n"
+    
+    override self.Equals(obj) =
+        match obj with
+        | :? Database<'e> as other ->
+            self.Events = other.Events && 
+            self.VersionVector = other.VersionVector
+        | _ -> false
 
 /// src -> dest -> msg
 type Sender<'e> = Address<'e> -> Address<'e> -> Message<'e> -> unit
 
 let send srcAddr destAddr msg =
     match (srcAddr, destAddr) with
-    | (Memory localDb, Memory remoteDb) ->
+    | (InMemory localDb, InMemory remoteDb) ->
         match msg with 
         | Sync ->
             let since = localDb.GetLogicalClock destAddr
