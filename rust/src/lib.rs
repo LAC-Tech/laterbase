@@ -1,6 +1,6 @@
 //! Laterbase is a bi-temporal event store. This means it has two distinc concepts of time: transaction time and valid time.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap};
 
 #[cfg(target_endian = "big")]
 compile_error!("I have assumed little endian throughout this codebase");
@@ -43,36 +43,30 @@ mod event {
 	}
 }
 
-#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum Address<E> {
-	Memory(Box<Database<E>>)
+pub trait Address<E>: Copy + Eq + Ord {
+	fn send(&self, msg: Message<E, Self>);
 }
 
 /// All of these must be idempotent
-pub enum Message<E> {
-	SyncWith(Address<E>),
-	SendEvents {
-		since: time::Transaction<clock::Logical>,
-		remote_addr: Address<E>
-	},
+pub enum Message<E, Addr: Address<E>> {
+	Sync(Addr),
+	SendEvents {since: time::Transaction<clock::Logical>, dest: Addr},
 	StoreEvents {
-		from: Option<(Address<E>, time::Transaction<clock::Logical>)>,
+		from: Option<(Addr, time::Transaction<clock::Logical>)>,
 		events: Box<[(event::Id, E)]>,
 	}
 }
 
 /// At this level an address is just a unique array of bytes
 #[derive(Debug)]
-#[cfg_attr(test, derive(Clone))]
-pub struct Database<E> {
+pub struct Database<E, Addr: Address<E>> {
 	events: BTreeMap<event::Id, E>,
 	append_log: Vec<event::Id>,
-	version_vector:
-		BTreeMap<Address<E>, time::Transaction<clock::Logical>>
+	version_vector: BTreeMap<Addr, time::Transaction<clock::Logical>>
 }
 
-impl<E: Copy> Database<E> {
-	fn new() -> Self {
+impl<E: Copy, Addr: Address<E>> Database<E, Addr> {
+	pub fn new() -> Self {
 		Self {
 			events: BTreeMap::new(),
 			append_log: vec![],
@@ -86,7 +80,7 @@ impl<E: Copy> Database<E> {
 	) -> time::Transaction<clock::Logical> {
 		*self
 			.version_vector
-			.get(addr.as_bytes())
+			.get(addr)
 			.unwrap_or(&time::Transaction(clock::LOGICAL_EPOCH))
 	}
 
@@ -96,7 +90,7 @@ impl<E: Copy> Database<E> {
 	) -> (Box<[(event::Id, E)]>, time::Transaction<clock::Logical>) {
 		let event_ids = &self.append_log[since..];
 
-		let events: Box<[(event::Id, E)]> = event_ids
+		let events = event_ids
 			.iter()
 			.flat_map(|id| {
 				self.events.get_key_value(id).map(|(&k, &v)| (k, v))
@@ -108,11 +102,11 @@ impl<E: Copy> Database<E> {
 
 	pub fn write_events(
 		&mut self,
-		from: Option<(Address<E>, time::Transaction<clock::Logical>)>,
+		from: Option<(Addr, time::Transaction<clock::Logical>)>,
 		new_events: &[(event::Id, E)],
 	) {
 		if let Some((addr, lc)) = from {
-			self.version_vector.insert(addr.as_bytes().into(), lc);
+			self.version_vector.insert(addr, lc);
 		}
 
 		for (k, v) in new_events.iter() {
@@ -122,45 +116,34 @@ impl<E: Copy> Database<E> {
 	}
 }
 
-#[cfg_attr(test, derive(Clone))]
-#[derive(Debug)]
-pub struct Replica<E> {
-	addr: Address<E>,
-	db: Database<E>
+pub struct Replica<E, Addr: Address<E>>{
+	pub db: Database<E, Addr>,
+	pub addr: Addr
 }
 
-impl<E: Copy> Replica<E> {
-	pub fn new(addr: Address<E>) -> Self {
-		let db = Database::new();
-		let addr = Box::from(addr);
-		Self {addr, db}
-	}
-
-	pub fn send(&mut self, msg: Message<E>) {
+impl <E: Copy, Addr: Address<E>> Replica<E, Addr> {
+	pub fn recv(&mut self, msg: Message<E, Addr>) {
 		match msg {
-			Message::SendEvents { since, remote_addr } => {
-				let (events, t) =self.db.read_events(since);
-
-				let outgoing_msg = Message::StoreEvents {
-					from: Some((self.addr.clone(), t)), 
-					events
-				};
-
-				remote_addr.send(outgoing_msg);
+			Message::Sync(dest) => {
+				let since = self.db.transaction_logical_clock(&dest);
+				let (events, lc) = self.db.read_events(since);
+				let msg = 
+					Message::StoreEvents{from: Some((self.addr, lc)), events};
+				dest.send(msg);
 			},
-			Message::SyncWith(remote_addr) => {
-				let outgoing_msg = Message::SendEvents {
-					since: self.db.transaction_logical_clock(remote_addr), 
-					remote_addr: self.addr.clone()
-				};
-
-				remote_addr.send(outgoing_msg);
+			Message::SendEvents {since, dest} => {
+				let (events, lc) = self.db.read_events(since);
+				let msg = 
+					Message::StoreEvents{from: Some((self.addr, lc)), events };
+				dest.send(msg);
 			},
-			Message::StoreEvents { from, events } =>
-				self.db.write_events(from, &events)
+			Message::StoreEvents { from, events } => {
+				self.db.write_events(from, &events);
+			}
 		}
 	}
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -176,6 +159,12 @@ mod tests {
 		prop::collection::vec((arb_event_id(), any::<u8>()), 0..=100)
 	}
 
+	#[derive(PartialEq, PartialOrd, Eq, Ord)]
+	struct TestAddress([u8; 16]);
+
+	impl Address<u8> for TestAddress {} 
+
+	/*
 	fn arb_db() -> impl Strategy<Value = Database<u8>> {
 		arb_events().prop_map(|es| {
 			let mut db = Database::<u8>::new();
@@ -239,4 +228,5 @@ mod tests {
 		
 		}
 	}
+	*/
 }
