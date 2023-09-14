@@ -91,7 +91,7 @@ and Database<'e>() =
         from |> Option.iter (fun (addr, lc) -> self.VersionVector[addr] <- lc)
 
         for (k, v) in newEvents do
-            self.Events[k] <- v
+            self.Events.TryAdd(k, v)
             appendLog.Add k
 
     override self.ToString() = 
