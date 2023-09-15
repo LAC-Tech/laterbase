@@ -49,7 +49,7 @@ module Event =
 type Address = {id: byte array}
 
 // All of the messages must be idempotent
-and Message<'e> =
+type Message<'e> =
     | Sync of Address
     | SendEvents of 
         since: Time.Transaction<Clock.Logical> * 
@@ -58,12 +58,55 @@ and Message<'e> =
         from: (Address * Time.Transaction<Clock.Logical>) option *
         events:  (Event.ID * 'e) list
 
+type Storage<'k, 'v>() =
+    member val internal Events = SortedDictionary<'k, 'v>()
+    member val internal AppendLog = ResizeArray<'k>()
+
+    /// Returns events in transaction order, ie the order they were written
+    member self.ReadEvents (since: int) =
+        let events = 
+            self.AppendLog.Skip since
+            |> Seq.choose (fun eventId -> 
+                self.Events
+                |> dictGet eventId
+                |> Option.map (fun v -> (eventId, v))
+            )
+            |> Seq.toList
+
+        let localLogicalTime = self.AppendLog.Count
+        (events, localLogicalTime)
+
+    member self.WriteEvents newEvents =
+        for (k, v) in newEvents do
+            if self.Events.TryAdd(k, v) then
+                self.AppendLog.Add k
+            else
+                eprintf "event %A already exists" k
+
+    override self.ToString() = 
+        let es = 
+            [for e in self.Events -> $"({e.Key}, {e.Value})" ]
+            |> String.concat ";"
+
+        let appendLogStr = 
+            [for id in self.AppendLog -> $"{id}" ]
+            |> String.concat ";"
+
+        [
+            "STORAGE"; 
+            $"- Events = [{es}]";
+            $"- Append Log = [{appendLogStr}]";
+        ] |> String.concat "\n"
+
+    override self.Equals(obj) =
+        match obj with
+        | :? Storage<'k, 'v> as other -> self.Events = other.Events
+        | _ -> false
+
 /// At this point we know nothing about the address, it's just an ID
-and Database<'e>() =
-    let appendLog = ResizeArray<Event.ID>()
-    // These are both internal members so I can use them for equality
-    member internal _.Events = SortedDictionary<Event.ID, 'e>()
-    member internal _.VersionVector =
+type Database<'e>() =
+    member val internal Storage = Storage<Event.ID, 'e>()
+    member val internal VersionVector =
         SortedDictionary<Address, Time.Transaction<Clock.Logical>>()    
 
     member self.GetLogicalClock addr =
@@ -74,60 +117,24 @@ and Database<'e>() =
     /// Returns events in transaction order, ie the order they were written
     member self.ReadEvents (since: Time.Transaction<Clock.Logical>) =
         let (Time.Transaction since) = since
-            
-        let events = 
-            appendLog.Skip (since.ToInt())
-            |> Seq.choose (fun eventId -> 
-                self.Events
-                |> dictGet eventId
-                |> Option.map (fun v -> (eventId, v))
-            )
-            |> Seq.toList
-
-        let localLogicalTime = appendLog.Count |> Clock.Logical.FromInt
-        (events, Time.Transaction localLogicalTime)
+        let (events, lc) = self.Storage.ReadEvents (since.ToInt())
+        (events, lc |> Clock.Logical.FromInt |> Time.Transaction)
 
     member self.WriteEvents newEvents from =
         // If it came from another replica, update version vec to reflect this
         from |> Option.iter (fun (addr, lc) -> self.VersionVector[addr] <- lc)
-
-        for (k, v) in newEvents do
-            self.Events.TryAdd(k, v)
-            appendLog.Add k
+        self.Storage.WriteEvents newEvents
 
     override self.ToString() = 
-        let es = 
-            [for e in self.Events -> $"({e.Key}, {e.Value})" ]
-            |> String.concat ";"
-
-        let appendLogStr = 
-            [for id in appendLog -> $"{id}" ]
-            |> String.concat ";"
-
         let vvStr =
             [for v in self.VersionVector -> $"({v.Key}, {v.Value})" ]
             |> String.concat ";"
 
         [
             "DATABASE"; 
-            $"- Events = [{es}]";
-            $"- Append Log = [{appendLogStr}]";
+            $"- Storage = [{self.Storage}]";
             $"- Version Vector = [{vvStr}]"
         ] |> String.concat "\n"
-    
-    override self.Equals(obj) =
-        match obj with
-        | :? Database<'e> as other ->
-            self.Events = other.Events && 
-            self.VersionVector = other.VersionVector
-        | _ -> false
-
-    override self.GetHashCode() =
-        let hash = 17;
-        let hash = hash * 23 * self.Events.GetHashCode()
-        let hash = hash * 23 * self.VersionVector.GetHashCode()
-
-        hash
 
 /// Modifies the database based on msg, then returns response messages to send
 let send<'e> (srcDb: Database<'e>) (srcAddr: Address) (msg: Message<'e>) =

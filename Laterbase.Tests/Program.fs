@@ -15,6 +15,7 @@ let genLogicalClock: Gen<Clock.Logical> =
 let genEventID: Gen<Event.ID> =
     Gen.map2 
         (fun ts bytes -> Event.ID(ts, bytes))
+
         (Arb.generate<int64<Time.ms>> |> Gen.map abs)
         (Arb.generate<byte> |> Gen.arrayOfLength 10)
 
@@ -49,7 +50,7 @@ let config = {
 }
 
 let test descr testFn =
-    printfn "# %A\n" descr
+    printfn "# %A" descr
     Check.One(config, testFn)
     printfn "\n"
 
@@ -59,7 +60,6 @@ test
         let i = lc.ToInt() 
         i = Clock.Logical.FromInt(i).ToInt()
     ))
-
 
 test 
     "ID's are unique"
@@ -71,6 +71,7 @@ test
     (fun
         (db: Database<EventVal>)
         (inputEvents: (Event.ID * byte) list) ->
+
 
         db.WriteEvents inputEvents None
 
