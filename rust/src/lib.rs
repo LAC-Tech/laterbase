@@ -1,6 +1,6 @@
 //! Laterbase is a bi-temporal event store. This means it has two distinc concepts of time: transaction time and valid time.
 
-use std::{collections::BTreeMap};
+use std::{collections::BTreeMap, cell::RefCell, rc::Rc};
 
 #[cfg(target_endian = "big")]
 compile_error!("I have assumed little endian throughout this codebase");
@@ -162,7 +162,7 @@ mod tests {
 
 	struct TestAddress {
 		id: [u8; 16],
-		send: std::rc::Rc<dyn Fn([u8; 16], Message<u8, Self>)>
+		send: Rc<dyn Fn(&TestAddress, Message<u8, Self>)>
 	}
 
 	impl fmt::Debug for TestAddress {
@@ -173,7 +173,7 @@ mod tests {
 
 	impl<'a> Address<u8> for TestAddress {
 		fn send(&self, msg: Message<u8, Self>) {
-		    (self.send)(self.id, msg);
+		    (self.send)(self, msg);
 		}
 	}
 
@@ -220,26 +220,54 @@ mod tests {
 		})
 	}
 
-	fn arb_addr_pair() -> impl Strategy<Value = (TestAddress, TestAddress)> {
-		((arb_db(), any::<[u8; 16]>()), (arb_db(), any::<[u8; 16]>()))
-		.prop_map(|((db1, id1), (db2, id2))| {
-			let dbs = std::cell::RefCell::new(BTreeMap::from([
-				(id1, db1),
-				(id2, db2)
-			]));
-
-			let send = |id: [u8; 16], msg: Message<u8, TestAddress>| {
-				let db = dbs.borrow_mut().get_mut(&id);
-			};
-
-			(
-				TestAddress {id: id1, send: std::rc::Rc::new(send)},
-				TestAddress {id: id2, send: std::rc::Rc::new(send)}
-			)
-		})
+	#[derive(Debug)]
+	struct AddressPair {
+		dbs: RefCell<BTreeMap<TestAddress, Database<u8, TestAddress>>>,
+		pub addr1: TestAddress,
+		pub addr2: TestAddress
 	}
 
+	impl AddressPair {
+		fn send(
+			dbs: RefCell<BTreeMap<TestAddress, Database<u8, TestAddress>>>,
+			addr: &TestAddress,
+			msg: Message<u8, TestAddress>
+		) {
+			let db: &mut Database<u8, TestAddress> = 
+				dbs.borrow_mut().get_mut(&addr).unwrap();
+			db.recv(&addr, msg);
+		}
 
+		fn new(
+			(id1, id2): ([u8; 16], [u8; 16]),
+			(db1, db2): (Database<u8, TestAddress>, Database<u8, TestAddress>)
+		) -> Self {
+			let dbs = RefCell::new(BTreeMap::new());
+
+			let (addr1, addr2) = (
+				TestAddress {
+					id: id1, 
+					send: Rc::new(|addr, msg| Self::send(dbs, addr, msg))
+				},
+				TestAddress {
+					id: id2, 
+					send: Rc::new(|addr, msg| Self::send(dbs, addr, msg))
+				}
+			);
+
+			dbs.borrow_mut().insert(addr1.clone(), db1);
+			dbs.borrow_mut().insert(addr2.clone(), db2);
+
+			Self {dbs, addr1, addr2}
+		}
+	}
+
+	fn arb_addr_pair() -> impl Strategy<Value = AddressPair> {
+		((arb_db(), any::<[u8; 16]>()), (arb_db(), any::<[u8; 16]>()))
+		.prop_map(|((db1, id1), (db2, id2))| {
+			AddressPair::new((id1, id2), (db1, db2))
+		})
+	}
 
 	proptest! {
 		#[test]
@@ -254,7 +282,10 @@ mod tests {
 		}
 
 		#[test]
-		fn merging_is_idempotent((addr1, addr2) in arb_addr_pair()) {
+		fn merging_is_idempotent(pair in arb_addr_pair()) {
+			let addr1 = pair.addr1;
+			let addr2 = pair.addr2;
+
 			addr1.send(Message::Sync(addr2.clone()));
 			addr2.send(Message::Sync(addr1.clone()));
 		}
