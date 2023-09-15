@@ -1,16 +1,11 @@
-﻿open Hedgehog
+﻿open FsCheck
 open Laterbase.Core
 open System
 
 Console.Clear ()
 
+type EventVal = byte
 
-Range.constant 0 100
-|> Gen.int32
-|> Gen.renderSample
-|> printfn "%s"
-
-(*
 let gen16Bytes: Gen<byte array> = 
     Arb.generate<byte> |> Gen.arrayOfLength 16
 
@@ -26,8 +21,7 @@ let genEventID: Gen<Event.ID> =
 let genDb: Gen<Database<byte>> = 
     Arb.generate<unit> |> Gen.map (fun _ -> Database<byte>())
 
-let genAddr: Gen<Address> = 
-    gen16Bytes |> Gen.map (fun bytes -> {id = bytes})
+let genAddr: Gen<Address> = gen16Bytes |> Gen.map (fun bytes -> {id = bytes})
 
 type MyGenerators = 
     static member LogicalClock() = 
@@ -76,32 +70,3 @@ let ``storing events locally is idempotent``
     inputEvents = outputEvents
 
 Check.One(config, ``storing events locally is idempotent``)
-*)
-
-// let merge (addr1: Address<EventVal>) (addr2: Address<EventVal>) =
-//     send addr1 addr2 Sync
-//     send addr2 addr1 Sync
-
-// let commutative 
-//     ((addrL1, addrR1): (Address<byte> * Address<byte>))
-//     ((addrL2, addrR2): (Address<byte> * Address<byte>)) =
-
-//     merge addrL1 addrL2
-//     merge addrR2 addrR1
-
-//     addrL1 = addrR2
-
-//Check.One(config, commutative)
-
-(*
-#[test]
-fn commutative(
-    (mut db_left_a, mut db_right_a) in arb_db_pairs(),
-    (mut db_left_b, mut db_right_b) in arb_db_pairs(),
-) {
-    merge(&mut db_left_a, &mut db_left_b);
-    merge(&mut db_right_b, &mut db_right_a);
-
-    assert_eq!(db_left_a, db_right_b);
-}
-*)
