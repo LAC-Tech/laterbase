@@ -48,25 +48,33 @@ let config = {
     Config.Quick with Arbitrary = [ typeof<MyGenerators> ]
 }
 
-let logicaClockToAndFromInt (lc: Clock.Logical) =
-    let i = lc.ToInt() 
-    i = Clock.Logical.FromInt(i).ToInt()
+let test descr testFn =
+    printfn "# %A\n" descr
+    Check.One(config, testFn)
+    printfn "\n"
 
-Check.One(config, logicaClockToAndFromInt)
+test 
+    "Can convert a logical clock to and from an int"
+    (fun (lc: Clock.Logical) -> (
+        let i = lc.ToInt() 
+        i = Clock.Logical.FromInt(i).ToInt()
+    ))
 
-let idsAreUnique (eventIds: Event.ID list) =
-    (eventIds |> List.distinct |> List.length) = (eventIds |> List.length)
 
-Check.One(config, idsAreUnique)
+test 
+    "ID's are unique"
+    (fun (eventIds: Event.ID list) ->
+        (eventIds |> List.distinct |> List.length) = (eventIds |> List.length))
 
-let ``storing events locally is idempotent`` 
-    (db: Database<EventVal>)
-    (inputEvents: (Event.ID * byte) list) =
-    db.WriteEvents inputEvents None
+test
+    "Storing events locally is idempotent"
+    (fun
+        (db: Database<EventVal>)
+        (inputEvents: (Event.ID * byte) list) ->
 
-    let (outputEvents, lc) = 
-        db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
+        db.WriteEvents inputEvents None
 
-    inputEvents = outputEvents
+        let (outputEvents, lc) = 
+            db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
 
-Check.One(config, ``storing events locally is idempotent``)
+        inputEvents = outputEvents)
