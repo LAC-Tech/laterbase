@@ -46,15 +46,16 @@ module Event =
             override self.ToString() = self.ulid.ToString()
         end
 
-type Address<'e> =
-    | InMemory of Database<'e>
+type Address = {id: byte array}
 
 // All of the messages must be idempotent
 and Message<'e> =
-    | Sync
-    | SendEvents of Time.Transaction<Clock.Logical>
+    | Sync of Address
+    | SendEvents of 
+        since: Time.Transaction<Clock.Logical> * 
+        destAddr: Address
     | StoreEvents of 
-        from: (Time.Transaction<Clock.Logical>) option *
+        from: (Address * Time.Transaction<Clock.Logical>) option *
         events:  (Event.ID * 'e) list
 
 /// At this point we know nothing about the address, it's just an ID
@@ -63,7 +64,7 @@ and Database<'e>() =
     // These are both internal members so I can use them for equality
     member internal _.Events = SortedDictionary<Event.ID, 'e>()
     member internal _.VersionVector =
-        SortedDictionary<Address<'e>, Time.Transaction<Clock.Logical>>()    
+        SortedDictionary<Address, Time.Transaction<Clock.Logical>>()    
 
     member self.GetLogicalClock addr =
         self.VersionVector
@@ -128,23 +129,16 @@ and Database<'e>() =
 
         hash
 
-    
-
-/// src -> dest -> msg
-type Sender<'e> = Address<'e> -> Address<'e> -> Message<'e> -> unit
-
-let send srcAddr destAddr msg =
-    match (srcAddr, destAddr) with
-    | (InMemory localDb, InMemory remoteDb) ->
-        match msg with 
-        | Sync ->
-            let since = localDb.GetLogicalClock destAddr
-            let (events, lc) = localDb.ReadEvents since
-            remoteDb.WriteEvents events (Some (srcAddr, lc))
-        | SendEvents since ->
-            let (events, lc) = localDb.ReadEvents since
-            remoteDb.WriteEvents events (Some (srcAddr, lc))
-        | StoreEvents (from, events) -> 
-            from
-            |> Option.map (fun lc -> (srcAddr, lc))
-            |> remoteDb.WriteEvents events
+/// Modifies the database based on msg, then returns response messages to send
+let send<'e> (srcDb: Database<'e>) (srcAddr: Address) (msg: Message<'e>) =
+    match msg with 
+    | Sync destAddr ->
+        let since = srcDb.GetLogicalClock destAddr
+        let (events, lc) = srcDb.ReadEvents since
+        seq { (destAddr, StoreEvents (Some (srcAddr, lc), events)) }
+    | SendEvents (since, destAddr) ->
+        let (events, lc) = srcDb.ReadEvents since
+        seq { (destAddr, StoreEvents (Some (srcAddr, lc), events)) }
+    | StoreEvents (from, events) -> 
+       srcDb.WriteEvents events from
+       Seq.empty

@@ -43,29 +43,31 @@ mod event {
 	}
 }
 
-#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct Address([u8; 16]);
+/// You can send things to an address, and you can store addresses.
+trait Address<E>: Clone + Eq + Ord + Sized {
+	fn send(&self, msg: Message<E, Self>);
+}
 
 /// All of these must be idempotent
-pub enum Message<E> {
-	Sync(Address),
-	SendEvents {since: time::Transaction<clock::Logical>, dest: Address},
+#[derive(Clone)]
+pub enum Message<E, Addr: Address<E>> {
+	Sync(Addr),
+	SendEvents {since: time::Transaction<clock::Logical>, dest: Addr},
 	StoreEvents {
-		from: Option<(Address, time::Transaction<clock::Logical>)>,
+		from: Option<(Addr, time::Transaction<clock::Logical>)>,
 		events: Box<[(event::Id, E)]>,
 	}
 }
 
 /// At this level an address is just a unique array of bytes
 #[derive(Debug)]
-pub struct Database<E> {
+pub struct Database<E, Addr: Address<E>> {
 	events: BTreeMap<event::Id, E>,
 	append_log: Vec<event::Id>,
-	version_vector: BTreeMap<Address, time::Transaction<clock::Logical>>
+	version_vector: BTreeMap<Addr, time::Transaction<clock::Logical>>
 }
 
-impl<E: Copy> Database<E> {
+impl<E: Copy, Addr: Address<E>> Database<E, Addr> {
 	pub fn new() -> Self {
 		Self {
 			events: BTreeMap::new(),
@@ -76,7 +78,7 @@ impl<E: Copy> Database<E> {
 
 	pub fn transaction_logical_clock(
 		&self,
-		addr: &Address,
+		addr: &Addr,
 	) -> time::Transaction<clock::Logical> {
 		*self
 			.version_vector
@@ -93,7 +95,7 @@ impl<E: Copy> Database<E> {
 		let events = event_ids
 			.iter()
 			.flat_map(|id| {
-				self.events.get_key_value(id).map(|(&k, &v)| (k, v))
+				self.events.get_key_value(id).map(|(k, &v)| (k.clone(), v))
 			})
 			.collect();
 
@@ -102,7 +104,7 @@ impl<E: Copy> Database<E> {
 
 	pub fn write_events(
 		&mut self,
-		from: Option<(Address, time::Transaction<clock::Logical>)>,
+		from: Option<(Addr, time::Transaction<clock::Logical>)>,
 		new_events: &[(event::Id, E)],
 	) {
 		if let Some((addr, lc)) = from {
@@ -110,38 +112,42 @@ impl<E: Copy> Database<E> {
 		}
 
 		for (k, v) in new_events.iter() {
-			self.events.insert(*k, *v);
-			self.append_log.push(*k);
+			match self.events.insert(*k, *v) {
+				Some(v) => {},
+				None => self.append_log.push(*k)
+			}
 		}
 	}
 }
 
-#[derive(Debug)]
-struct Replica<E> {
-	addr: Address,
-	db: Database<E>
+trait Receiver<E, Addr: Address<E>> {
+	fn recv(
+		&mut self,
+		src_addr: &Addr,
+		incoming_msg: Message<E, Addr>
+	);
 }
 
-impl<E: Copy> Replica<E> {
-	pub fn recv(
+impl<E: Copy, Addr: Address<E>> Receiver<E, Addr> for Database<E, Addr> {
+	fn recv(
 		&mut self,
-		incoming_msg: Message<E>
-	) -> Vec<(Message<E>, Address)> {
+		src_addr: &Addr,
+		incoming_msg: Message<E, Addr>
+	) {
 		match incoming_msg {
 			Message::Sync(dest) => {
-				let since = self.db.transaction_logical_clock(&dest);
-				let (events, lc) = self.db.read_events(since);
-				let from = Some((self.addr.clone(), lc));
-				vec![(Message::StoreEvents{from, events}, dest)]
+				let since = self.transaction_logical_clock(&dest);
+				let (events, lc) = self.read_events(since);
+				let from = Some((src_addr.clone(), lc));
+				dest.send(Message::StoreEvents{from, events});
 			},
 			Message::SendEvents {since, dest} => {
-				let (events, lc) = self.db.read_events(since);
-				let from = Some((self.addr.clone(), lc));
-				vec![((Message::StoreEvents{from, events}, dest))]
+				let (events, lc) = self.read_events(since);
+				let from = Some((src_addr.clone(), lc));
+				dest.send(Message::StoreEvents{from, events});
 			},
 			Message::StoreEvents { from, events } => {
-				self.db.write_events(from, &events);
-				vec![]
+				self.write_events(from, &events);
 			}
 		}
 	}
@@ -152,6 +158,44 @@ mod tests {
 	use super::*;
 	use proptest::prelude::*;
 
+	#[derive(Debug)]
+	struct TestAddress {
+		id: [u8; 16],
+		db: std::cell::RefCell<Database<u8, Self>>
+	}
+
+	impl<'a> Address<u8> for TestAddress {
+		fn send(&self, msg: Message<u8, Self>) {
+		    self.db.borrow_mut().recv(self, msg);
+		}
+	}
+
+	impl Clone for TestAddress {
+		fn clone(&self) -> Self {
+		    Self { id: self.id, db: self.db.clone() }
+		}
+	}
+
+	impl PartialEq for TestAddress {
+		fn eq(&self, other: &Self) -> bool {
+		    self.id.eq(&other.id)
+		}
+	}
+
+	impl Eq for TestAddress {}
+
+	impl PartialOrd for TestAddress {
+		fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		    self.id.partial_cmp(&other.id)
+		}
+	}
+
+	impl Ord for TestAddress {
+		fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		    self.id.cmp(&other.id)
+		}
+	}
+
 	fn arb_event_id() -> impl Strategy<Value = event::Id> {
 		any::<(usize, u128)>()
 			.prop_map(|(ts, bytes)| event::Id::new(ts as u64, bytes))
@@ -161,33 +205,28 @@ mod tests {
 		prop::collection::vec((arb_event_id(), any::<u8>()), 0..=100)
 	}
 
-	fn arb_address() -> impl Strategy<Value = Address> {
-		any::<[u8; 16]>().prop_map(Address)
-	}
-
-	
-	fn arb_db() -> impl Strategy<Value = Database<u8>> {
+	fn arb_db() -> impl Strategy<Value = Database<u8, TestAddress>> {
 		arb_events().prop_map(|es| {
-			let mut db = Database::<u8>::new();
+			let mut db = Database::<u8, TestAddress>::new();
 			db.write_events(None, &es);
 			db
 		})
 	}
 
-	fn arb_replica_pair() -> impl Strategy<Value = (Replica<u8>, Replica<u8>)> {
-		(
-			(arb_address(), arb_db()),
-			(arb_address(), arb_db())
-		).prop_map(|((addr1, db1), (addr2, db2))| {
-			(Replica {addr: addr1, db: db1}, Replica {addr: addr2, db: db2})
-
+	fn arb_addr_pair() -> impl Strategy<Value = (TestAddress, TestAddress)> {
+		((arb_db(), any::<[u8; 16]>()), (arb_db(), any::<[u8; 16]>()))
+		.prop_map(|((db1, id1), (db2, id2))| {
+			(
+				TestAddress {id: id1, db: std::cell::RefCell::new(db1)},
+				TestAddress {id: id2, db: std::cell::RefCell::new(db2)}
+			)
 		})
 	}
 
 	proptest! {
 		#[test]
 		fn can_read_and_write_events(events in arb_events()) {
-			let mut db = Database::<u8>::new();
+			let mut db = Database::<u8, TestAddress>::new();
 			db.write_events(None, &events);
 
 			let (recorded_events, _) = 
@@ -197,26 +236,9 @@ mod tests {
 		}
 
 		#[test]
-		fn merging_is_idempotent((mut r1, mut r2) in arb_replica_pair()) {
-
-			let (addr1, addr2) = (r1.addr.clone(), r2.addr.clone());
-
-			let xs = r1.recv(Message::Sync(addr2.clone()));
-
-			for (msg, addr) in xs {
-				let mut r = 
-					if addr == addr1 {
-						r1
-					} else if addr == addr2 {
-						r2
-					} else {
-						panic!("lol");
-					};
-				
-				r.recv(msg);
-			}
-
-			let xs = &r2.recv(Message::Sync(addr2.clone()));
+		fn merging_is_idempotent((addr1, addr2) in arb_addr_pair()) {
+			addr1.send(Message::Sync(addr2.clone()));
+			addr2.send(Message::Sync(addr1.clone()));
 		}
 	}
 }

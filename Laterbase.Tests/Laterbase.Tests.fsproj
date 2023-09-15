@@ -10,12 +10,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FsCheck" Version="2.16.6" />
+    <ProjectReference Include="..\Laterbase.Core\Laterbase.Core.fsproj" />
+    <ProjectReference Include="..\Laterbase.Simulated\Laterbase.Simulated.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Laterbase.Core\Laterbase.Core.fsproj" />
-    <ProjectReference Include="..\Laterbase.Simulated\Laterbase.Simulated.fsproj" />
+    <PackageReference Include="Hedgehog" Version="0.13.0" />
   </ItemGroup>
 
 </Project>

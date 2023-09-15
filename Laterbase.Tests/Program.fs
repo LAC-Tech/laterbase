@@ -1,11 +1,16 @@
-﻿open FsCheck
+﻿open Hedgehog
 open Laterbase.Core
 open System
 
 Console.Clear ()
 
-type EventVal = byte
 
+Range.constant 0 100
+|> Gen.int32
+|> Gen.renderSample
+|> printfn "%s"
+
+(*
 let gen16Bytes: Gen<byte array> = 
     Arb.generate<byte> |> Gen.arrayOfLength 16
 
@@ -21,9 +26,8 @@ let genEventID: Gen<Event.ID> =
 let genDb: Gen<Database<byte>> = 
     Arb.generate<unit> |> Gen.map (fun _ -> Database<byte>())
 
-let genPopulatedAddr: Gen<Address<byte>> =
-    Arb.generate<Database<byte> * (Event.ID * byte) array>
-    |> Gen.map (fun (db, events) -> db.WriteEvents events None; InMemory db)
+let genAddr: Gen<Address> = 
+    gen16Bytes |> Gen.map (fun bytes -> {id = bytes})
 
 type MyGenerators = 
     static member LogicalClock() = 
@@ -42,8 +46,8 @@ type MyGenerators =
             override _.Shrinker _ = Seq.empty}
 
     static member Address() =
-        {new Arbitrary<Address<byte>>() with
-            override _.Generator = genPopulatedAddr
+        {new Arbitrary<Address>() with
+            override _.Generator = genAddr
             override _.Shrinker _ = Seq.empty}
 
 let config = {
@@ -72,6 +76,7 @@ let ``storing events locally is idempotent``
     inputEvents = outputEvents
 
 Check.One(config, ``storing events locally is idempotent``)
+*)
 
 // let merge (addr1: Address<EventVal>) (addr2: Address<EventVal>) =
 //     send addr1 addr2 Sync
