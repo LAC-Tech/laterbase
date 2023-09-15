@@ -44,7 +44,7 @@ mod event {
 }
 
 /// You can send things to an address, and you can store addresses.
-trait Address<E>: Clone + Eq + Ord + Sized {
+pub trait Address<E>: Clone + Eq + Ord + Sized {
 	fn send(&self, msg: Message<E, Self>);
 }
 
@@ -156,23 +156,30 @@ impl<E: Copy, Addr: Address<E>> Receiver<E, Addr> for Database<E, Addr> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use std::fmt;
 	use proptest::prelude::*;
 
-	#[derive(Debug)]
+
 	struct TestAddress {
 		id: [u8; 16],
-		db: std::cell::RefCell<Database<u8, Self>>
+		send: std::rc::Rc<dyn Fn([u8; 16], Message<u8, Self>)>
+	}
+
+	impl fmt::Debug for TestAddress {
+	    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+	        write!(f, "TestAddress [{:?}]", self.id)
+	    }
 	}
 
 	impl<'a> Address<u8> for TestAddress {
 		fn send(&self, msg: Message<u8, Self>) {
-		    self.db.borrow_mut().recv(self, msg);
+		    (self.send)(self.id, msg);
 		}
 	}
 
 	impl Clone for TestAddress {
 		fn clone(&self) -> Self {
-		    Self { id: self.id, db: self.db.clone() }
+		    Self { id: self.id, send: self.send.clone() }
 		}
 	}
 
@@ -216,12 +223,23 @@ mod tests {
 	fn arb_addr_pair() -> impl Strategy<Value = (TestAddress, TestAddress)> {
 		((arb_db(), any::<[u8; 16]>()), (arb_db(), any::<[u8; 16]>()))
 		.prop_map(|((db1, id1), (db2, id2))| {
+			let dbs = std::cell::RefCell::new(BTreeMap::from([
+				(id1, db1),
+				(id2, db2)
+			]));
+
+			let send = |id: [u8; 16], msg: Message<u8, TestAddress>| {
+				let db = dbs.borrow_mut().get_mut(&id);
+			};
+
 			(
-				TestAddress {id: id1, db: std::cell::RefCell::new(db1)},
-				TestAddress {id: id2, db: std::cell::RefCell::new(db2)}
+				TestAddress {id: id1, send: std::rc::Rc::new(send)},
+				TestAddress {id: id2, send: std::rc::Rc::new(send)}
 			)
 		})
 	}
+
+
 
 	proptest! {
 		#[test]
