@@ -53,10 +53,10 @@ type Address(id: byte array) =
 type Message<'e> =
     | Sync of Address
     | SendEvents of 
-        since: uint32<events> * 
+        since: uint64<events> * 
         destAddr: Address
     | StoreEvents of 
-        from: (Address * uint32<events>) option *
+        from: (Address * uint64<events>) option *
         events:  (Event.ID * 'e) list
 
 type Storage<'k, 'v>() =
@@ -64,17 +64,16 @@ type Storage<'k, 'v>() =
     member val internal AppendLog = ResizeArray<'k>()
 
     /// Returns events in transaction order, ie the order they were written
-    member self.ReadEvents (since: int) =
+    member self.ReadEvents (since: uint64) =
         let events = 
-            self.AppendLog.Skip since
+            self.AppendLog.Skip (Checked.int since)
             |> Seq.choose (fun eventId -> 
                 self.Events
                 |> dictGet eventId
                 |> Option.map (fun v -> (eventId, v))
             )
-            |> Seq.toList
 
-        let localLogicalTime = self.AppendLog.Count
+        let localLogicalTime = Checked.uint64 self.AppendLog.Count
         (events, localLogicalTime)
 
     member self.WriteEvents newEvents =
@@ -102,19 +101,18 @@ type Storage<'k, 'v>() =
 type Database<'e>() =
     member val internal Storage = Storage<Event.ID, 'e>()
     member val internal VersionVector =
-        SortedDictionary<Address, uint32<events>>()    
+        SortedDictionary<Address, uint64<events>>()    
 
     member self.GetLogicalClock addr =
         self.VersionVector
         |> dictGet addr
-        |> Option.defaultValue 0u<events>
+        |> Option.defaultValue 0UL<events>
 
     /// Returns events in transaction order, ie the order they were written
-    member self.ReadEvents (since: uint32<events>) =
-        let since = Checked.int since
-        let (events, lc) = self.Storage.ReadEvents since
-        let lc = Checked.uint32 lc
-        (events, lc * 1u<events>)
+    member self.ReadEvents (since: uint64<events>) =
+        let (events, lc) = self.Storage.ReadEvents (uint64 since)
+        let lc = Checked.uint64 lc
+        (events, lc * 1uL<events>)
 
     member self.WriteEvents from newEvents =
         // If it came from another replica, update version vec to reflect this
@@ -141,9 +139,9 @@ let recv<'e>
     | Sync destAddr ->
         let since = src.Db.GetLogicalClock destAddr
         let (events, lc) = src.Db.ReadEvents since
-        StoreEvents (Some (src.Addr, lc), events) |> send destAddr
+        StoreEvents (Some (src.Addr, lc), List.ofSeq events) |> send destAddr
     | SendEvents (since, destAddr) ->
         let (events, lc) = src.Db.ReadEvents since
-        StoreEvents (Some (src.Addr, lc), events) |> send destAddr
+        StoreEvents (Some (src.Addr, lc), List.ofSeq events) |> send destAddr
     | StoreEvents (from, events) -> src.Db.WriteEvents from events
 
