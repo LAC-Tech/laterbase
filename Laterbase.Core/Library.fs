@@ -46,6 +46,7 @@ type Address(id: byte array) =
         |> String.concat ""
 
 // All of the messages must be idempotent
+[<IsReadOnly; Struct>]
 type Message<'e> =
     | Sync of Address
     | SendEvents of 
@@ -88,16 +89,27 @@ type Storage<'k, 'v>() =
 
         $"Storage [Events {es}] [AppendLog {appendLogStr}]"
 
+type VersionVector() = 
+    member val internal State = SortedDictionary<Address, uint64<events>>()
+
+    member self.Update(addr: Address) =
+        let c = self.State |> dictGet addr |> Option.defaultValue 0UL<events>
+        self.State[addr] <- c + 1UL<events>
+
+    member self.Get(addr: Address) =
+        self.State |> dictGet addr |> Option.defaultValue 0UL<events>
+
+    member self.Add(addr: Address, counter: uint64<events) =
+        self.State[addr] <- counter
+
+    override self.ToString() =
+        [for v in self.State -> $"({v.Key}, {v.Value})" ] |> String.concat ";"
+
+    
 /// At this point we know nothing about the address, it's just an ID
 type Database<'e>() =
     member val internal Storage = Storage<Event.ID, 'e>()
-    member val internal VersionVector =
-        SortedDictionary<Address, uint64<events>>()    
-
-    member self.GetLogicalClock addr =
-        self.VersionVector
-        |> dictGet addr
-        |> Option.defaultValue 0UL<events>
+    member val internal VersionVector = VersionVector()
 
     /// Returns events in transaction order, ie the order they were written
     member self.ReadEvents (since: uint64<events>) =
@@ -107,15 +119,11 @@ type Database<'e>() =
 
     member self.WriteEvents from newEvents =
         // If it came from another replica, update version vec to reflect this
-        from |> Option.iter (fun (addr, lc) -> self.VersionVector[addr] <- lc)
+        from |> Option.iter self.VersionVector.Add
         self.Storage.WriteEvents newEvents
 
     override self.ToString() = 
-        let vvStr =
-            [for v in self.VersionVector -> $"({v.Key}, {v.Value})" ]
-            |> String.concat ";"
-
-        $"Database [{self.Storage}] [VersionVector {vvStr}]"
+        $"Database [{self.Storage}] [VersionVector {self.Storage}]"
 
 let converged (db1: Database<'e>) (db2: Database<'e>) =
     let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)

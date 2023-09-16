@@ -99,8 +99,7 @@ test
     "two databases will have the same events if they sync with each other"
     (fun 
         ((addr1, events1) : (Address * (Event.ID * EventVal) list))
-        ((addr2, events2) : (Address * (Event.ID * EventVal) list))
-        ->
+        ((addr2, events2) : (Address * (Event.ID * EventVal) list)) ->
 
         let r1 = {Db = Database<EventVal>(); Addr = addr1}
         let r2 = {Db = Database<EventVal>(); Addr = addr2}
