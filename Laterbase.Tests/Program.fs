@@ -12,7 +12,7 @@ let genLogicalClock = Arb.generate<uint32<events>>
 
 let genEventID: Gen<Event.ID> =
     Gen.map2 
-        (fun ts bytes -> Event.ID(ts, bytes))
+        (fun ts bytes -> Event.newId ts bytes)
 
         (Arb.generate<int64<Time.ms>> |> Gen.map abs)
         (Arb.generate<byte> |> Gen.arrayOfLength 10)
@@ -71,13 +71,13 @@ test
 
 test
     "Storing events locally is idempotent"
-    (fun (inputEvents: (int64 * int64) list) ->
-        let storage = Storage()
+    (fun (inputEvents: (Event.ID * int64) list) ->
+        let db = Database()
         seq {
             for _ in 1..100 do
-                storage.WriteEvents inputEvents
+                db.WriteEvents None inputEvents
 
-                let (outputEvents, _) = storage.ReadEvents 0UL
+                let (outputEvents, _) = db.ReadEvents 0UL<events>
 
                 let outputEvents = outputEvents |> List.ofSeq
 

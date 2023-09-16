@@ -32,10 +32,10 @@ module Event =
     /// them the physical valid time. This is so clients can generate their own
     /// IDs.
     /// TODO: make sure the physical time is not greater than current time.
-    [<IsReadOnly; Struct>]
-    type ID(timestamp: int64<Time.ms>, randomness: byte array) =
-        member _.Ulid = Ulid(int64 timestamp, randomness)
-        override self.ToString() = self.Ulid.ToString()
+    type ID = Ulid
+
+    let newId (timestamp: int64<Time.ms>) (randomness: byte array) =
+        Ulid(int64 timestamp, randomness)
 
 [<IsReadOnly; Struct>]
 type Address(id: byte array) =
@@ -125,12 +125,9 @@ type Replica<'e> = {Db: Database<'e>; Addr: Address}
 
 type Sender<'e> = Address -> Message<'e> -> unit
 
+
 /// Modifies the database based on msg, then returns response messages to send
-let recv<'e> 
-    (src: Replica<'e>)
-    (send: Sender<'e>)
-    (msg: Message<'e>) =
-    match msg with 
+let recv<'e> (src: Replica<'e>) (send: Sender<'e>) = function
     | Sync destAddr ->
         let since = src.Db.GetLogicalClock destAddr
         let (events, lc) = src.Db.ReadEvents since
