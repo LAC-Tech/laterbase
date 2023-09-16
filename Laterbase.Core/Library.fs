@@ -32,14 +32,10 @@ module Event =
     /// them the physical valid time. This is so clients can generate their own
     /// IDs.
     /// TODO: make sure the physical time is not greater than current time.
-    type ID =
-        struct
-            val ulid: Ulid
-            new (timestamp: int64<Time.ms>, randomness: byte array) =
-                let ulid = Ulid(int64 timestamp, randomness)
-                { ulid = ulid }
-            override self.ToString() = self.ulid.ToString()
-        end
+    [<IsReadOnly; Struct>]
+    type ID(timestamp: int64<Time.ms>, randomness: byte array) =
+        member _.Ulid = Ulid(int64 timestamp, randomness)
+        override self.ToString() = self.Ulid.ToString()
 
 [<IsReadOnly; Struct>]
 type Address(id: byte array) =
@@ -92,11 +88,6 @@ type Storage<'k, 'v>() =
 
         $"Storage [Events {es}] [AppendLog {appendLogStr}]"
 
-    override self.Equals(obj) =
-        match obj with
-        | :? Storage<'k, 'v> as other -> self.Events = other.Events
-        | _ -> false
-
 /// At this point we know nothing about the address, it's just an ID
 type Database<'e>() =
     member val internal Storage = Storage<Event.ID, 'e>()
@@ -126,6 +117,10 @@ type Database<'e>() =
 
         $"Database [{self.Storage}] [VersionVector {vvStr}]"
 
+let converged (db1: Database<'e>) (db2: Database<'e>) =
+    let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)
+    es1.SequenceEqual(es2)
+
 type Replica<'e> = {Db: Database<'e>; Addr: Address}
 
 type Sender<'e> = Address -> Message<'e> -> unit
@@ -144,4 +139,3 @@ let recv<'e>
         let (events, lc) = src.Db.ReadEvents since
         StoreEvents (Some (src.Addr, lc), List.ofSeq events) |> send destAddr
     | StoreEvents (from, events) -> src.Db.WriteEvents from events
-

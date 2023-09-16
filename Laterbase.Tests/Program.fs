@@ -69,7 +69,6 @@ test
     (fun (eventIds: Event.ID list) ->
         (eventIds |> List.distinct |> List.length) = (eventIds |> List.length))
 
-(** TODO: this sometimes fails with (StdGen (1022952468, 297233842)) *)
 test
     "Storing events locally is idempotent"
     (fun (inputEvents: (int64 * int64) list) ->
@@ -82,6 +81,7 @@ test
 
                 let outputEvents = outputEvents |> List.ofSeq
 
+                // Storage will not store duplicates
                 let inputEvents = 
                     inputEvents |> List.distinctBy (fun (k, _) -> k) 
 
@@ -95,27 +95,36 @@ test
         |> Seq.forall id
     )
 
-// test 
-//     "two databases will have the same events if they sync with each other"
-//     (fun 
-//         ((r1, events1) : (Replica<EventVal> * (Event.ID * EventVal) list))
-//         ((r2, events2) : (Replica<EventVal> * (Event.ID * EventVal) list))
-//         ->
+test 
+    "two databases will have the same events if they sync with each other"
+    (fun 
+        ((addr1, events1) : (Address * (Event.ID * EventVal) list))
+        ((addr2, events2) : (Address * (Event.ID * EventVal) list))
+        ->
 
-//         // Simulating a network
-//         let network = Map.ofList [r1.Addr, r1.Db; r2.Addr, r2.Db]
+        let r1 = {Db = Database<EventVal>(); Addr = addr1}
+        let r2 = {Db = Database<EventVal>(); Addr = addr2}
 
-//         let rec send addr (msg: Message<byte>) =
-//             let db = network |> Map.find addr
-//             let replica = {Db = db; Addr = addr}
-//             recv replica send msg
+        // Simulating a network
+        let network = Map.ofList [r1.Addr, r1.Db; r2.Addr, r2.Db]
 
-//         // Populate the two databases with separate events
-//         r1.Db.WriteEvents None events1
-//         r2.Db.WriteEvents None events2
+        let rec send addr (msg: Message<byte>) =
+            let db = network |> Map.find addr
+            let replica = {Db = db; Addr = addr}
+            recv replica send msg
 
-//         recv r1 send (Sync r2.Addr)
-//         recv r2 send (Sync r1.Addr)
+        // Populate the two databases with separate events
+        r1.Db.WriteEvents None events1
+        r2.Db.WriteEvents None events2
 
-//         r1.Db = r2.Db
-//     )
+        recv r1 send (Sync r2.Addr)
+        recv r2 send (Sync r1.Addr)
+
+        let result = converged r1.Db r2.Db
+
+        if (not result) then
+            eprintfn "ERROR:"
+            eprintfn "%A != %A\n" r1.Db r2.Db
+
+        result
+    )
