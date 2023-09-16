@@ -8,8 +8,7 @@ type EventVal = byte
 
 let gen16Bytes = Arb.generate<byte> |> Gen.arrayOfLength 16
 
-let genLogicalClock = 
-    Arb.generate<int> |> Gen.map (abs >> Clock.Logical.FromInt)
+let genLogicalClock = Arb.generate<uint32<events>>
 
 let genEventID: Gen<Event.ID> =
     Gen.map2 
@@ -20,7 +19,7 @@ let genEventID: Gen<Event.ID> =
 
 let genDb = Arb.generate<unit> |> Gen.map (fun _ -> Database<byte>())
 
-let genAddr = gen16Bytes |> Gen.map (fun bytes -> {id = bytes})
+let genAddr = gen16Bytes |> Gen.map Address
 
 let genReplica = 
     Gen.map2
@@ -29,11 +28,12 @@ let genReplica =
         genAddr
 
 type MyGenerators = 
+(*
     static member LogicalClock() = 
-        {new Arbitrary<Clock.Logical>() with
+        {new Arbitrary<uint32<events>>() with
             override _.Generator = genLogicalClock
             override _.Shrinker _ = Seq.empty}
-    
+*)  
     static member EventID() =
         {new Arbitrary<Event.ID>() with
             override _.Generator = genEventID                            
@@ -64,18 +64,11 @@ let test descr testFn =
     printfn "\n"
 
 test 
-    "Can convert a logical clock to and from an int"
-    (fun (lc: Clock.Logical) -> (
-        let i = lc.ToInt() 
-        i = Clock.Logical.FromInt(i).ToInt()
-    ))
-
-test 
     "ID's are unique"
     (fun (eventIds: Event.ID list) ->
         (eventIds |> List.distinct |> List.length) = (eventIds |> List.length))
 
-(** TODO: this sometimes fails WRITE DOWN THE SEED *)
+(** TODO: this sometimes fails with (StdGen (1022952468, 297233842)) *)
 test
     "Storing events locally is idempotent"
     (fun (db: Database<EventVal>) (inputEvents: (Event.ID * byte) list) ->
@@ -84,7 +77,7 @@ test
                 db.WriteEvents None inputEvents
 
                 let (outputEvents, _) = 
-                    db.ReadEvents (Time.Transaction Clock.Logical.Epoch)
+                    db.ReadEvents 0u<events>
 
                 yield inputEvents = outputEvents
         } 

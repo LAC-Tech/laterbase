@@ -3,6 +3,7 @@
 open System
 open System.Collections.Generic
 open System.Linq
+open System.Runtime.CompilerServices
 
 open NetUlid
 
@@ -13,7 +14,6 @@ module Option =
 let dictGet k (dict: IDictionary<'k, 'v>) = dict.TryGetValue k |> Option.ofTry
 
 /// Wrappers purely so one isn't passed in when the other is expected
-/// TODO: is this a usecase for measurements?
 module Time =
     /// When a replica recorded an event
     type Transaction<'t> = Transaction of 't
@@ -25,12 +25,7 @@ module Time =
     let m = 60L * s
     let h = 60L * m
 
-module Clock =
-    type Logical(n: uint64) = struct
-        member _.ToInt () = Checked.int n
-        static member FromInt n = Logical (Checked.uint64 n)
-        static member Epoch = Logical 0UL
-    end
+[<Measure>] type events
 
 module Event = 
     /// IDs must be globally unique and orderable. They should contain within
@@ -46,17 +41,22 @@ module Event =
             override self.ToString() = self.ulid.ToString()
         end
 
-[<Struct>]
-type Address = {id: byte array}
+[<IsReadOnly; Struct>]
+type Address(id: byte array) =
+    member _.Id = id
+    override this.ToString() = 
+        this.Id
+        |> Array.map (fun b -> b.ToString("X2"))
+        |> String.concat ""
 
 // All of the messages must be idempotent
 type Message<'e> =
     | Sync of Address
     | SendEvents of 
-        since: Time.Transaction<Clock.Logical> * 
+        since: uint32<events> * 
         destAddr: Address
     | StoreEvents of 
-        from: (Address * Time.Transaction<Clock.Logical>) option *
+        from: (Address * uint32<events>) option *
         events:  (Event.ID * 'e) list
 
 type Storage<'k, 'v>() =
@@ -91,11 +91,7 @@ type Storage<'k, 'v>() =
             [for id in self.AppendLog -> $"{id}" ]
             |> String.concat ";"
 
-        [
-            "STORAGE"; 
-            $"- Events = [{es}]";
-            $"- Append Log = [{appendLogStr}]";
-        ] |> String.concat "\n"
+        $"Storage [Events {es}] [AppendLog {appendLogStr}]"
 
     override self.Equals(obj) =
         match obj with
@@ -106,18 +102,19 @@ type Storage<'k, 'v>() =
 type Database<'e>() =
     member val internal Storage = Storage<Event.ID, 'e>()
     member val internal VersionVector =
-        SortedDictionary<Address, Time.Transaction<Clock.Logical>>()    
+        SortedDictionary<Address, uint32<events>>()    
 
     member self.GetLogicalClock addr =
         self.VersionVector
         |> dictGet addr
-        |> Option.defaultValue (Time.Transaction Clock.Logical.Epoch)
+        |> Option.defaultValue 0u<events>
 
     /// Returns events in transaction order, ie the order they were written
-    member self.ReadEvents (since: Time.Transaction<Clock.Logical>) =
-        let (Time.Transaction since) = since
-        let (events, lc) = self.Storage.ReadEvents (since.ToInt())
-        (events, lc |> Clock.Logical.FromInt |> Time.Transaction)
+    member self.ReadEvents (since: uint32<events>) =
+        let since = Checked.int since
+        let (events, lc) = self.Storage.ReadEvents since
+        let lc = Checked.uint32 lc
+        (events, lc * 1u<events>)
 
     member self.WriteEvents from newEvents =
         // If it came from another replica, update version vec to reflect this
@@ -129,11 +126,7 @@ type Database<'e>() =
             [for v in self.VersionVector -> $"({v.Key}, {v.Value})" ]
             |> String.concat ";"
 
-        [
-            "DATABASE"; 
-            $"- Storage = [\n{self.Storage}\n]";
-            $"- Version Vector = [{vvStr}]"
-        ] |> String.concat "\n"
+        $"Database [{self.Storage}] [VersionVector {vvStr}]"
 
 type Replica<'e> = {Db: Database<'e>; Addr: Address}
 
