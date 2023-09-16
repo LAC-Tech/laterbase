@@ -46,6 +46,7 @@ module Event =
             override self.ToString() = self.ulid.ToString()
         end
 
+[<Struct>]
 type Address = {id: byte array}
 
 // All of the messages must be idempotent
@@ -80,8 +81,6 @@ type Storage<'k, 'v>() =
         for (k, v) in newEvents do
             if self.Events.TryAdd(k, v) then
                 self.AppendLog.Add k
-            else
-                eprintf "event %A already exists" k
 
     override self.ToString() = 
         let es = 
@@ -120,7 +119,7 @@ type Database<'e>() =
         let (events, lc) = self.Storage.ReadEvents (since.ToInt())
         (events, lc |> Clock.Logical.FromInt |> Time.Transaction)
 
-    member self.WriteEvents newEvents from =
+    member self.WriteEvents from newEvents =
         // If it came from another replica, update version vec to reflect this
         from |> Option.iter (fun (addr, lc) -> self.VersionVector[addr] <- lc)
         self.Storage.WriteEvents newEvents
@@ -132,20 +131,26 @@ type Database<'e>() =
 
         [
             "DATABASE"; 
-            $"- Storage = [{self.Storage}]";
+            $"- Storage = [\n{self.Storage}\n]";
             $"- Version Vector = [{vvStr}]"
         ] |> String.concat "\n"
 
+type Replica<'e> = {Db: Database<'e>; Addr: Address}
+
+type Sender<'e> = Address -> Message<'e> -> unit
+
 /// Modifies the database based on msg, then returns response messages to send
-let send<'e> (srcDb: Database<'e>) (srcAddr: Address) (msg: Message<'e>) =
+let recv<'e> 
+    (src: Replica<'e>)
+    (send: Sender<'e>)
+    (msg: Message<'e>) =
     match msg with 
     | Sync destAddr ->
-        let since = srcDb.GetLogicalClock destAddr
-        let (events, lc) = srcDb.ReadEvents since
-        seq { (destAddr, StoreEvents (Some (srcAddr, lc), events)) }
+        let since = src.Db.GetLogicalClock destAddr
+        let (events, lc) = src.Db.ReadEvents since
+        StoreEvents (Some (src.Addr, lc), events) |> send destAddr
     | SendEvents (since, destAddr) ->
-        let (events, lc) = srcDb.ReadEvents since
-        seq { (destAddr, StoreEvents (Some (srcAddr, lc), events)) }
-    | StoreEvents (from, events) -> 
-       srcDb.WriteEvents events from
-       Seq.empty
+        let (events, lc) = src.Db.ReadEvents since
+        StoreEvents (Some (src.Addr, lc), events) |> send destAddr
+    | StoreEvents (from, events) -> src.Db.WriteEvents from events
+
