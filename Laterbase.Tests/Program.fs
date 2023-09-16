@@ -17,6 +17,8 @@ let genEventID: Gen<Event.ID> =
         (Arb.generate<int64<Time.ms>> |> Gen.map abs)
         (Arb.generate<byte> |> Gen.arrayOfLength 10)
 
+let genStorage = Arb.generate<unit> |> Gen.map (fun _ -> Storage<byte, byte>())
+
 let genDb = Arb.generate<unit> |> Gen.map (fun _ -> Database<byte>())
 
 let genAddr = gen16Bytes |> Gen.map Address
@@ -28,15 +30,14 @@ let genReplica =
         genAddr
 
 type MyGenerators = 
-(*
-    static member LogicalClock() = 
-        {new Arbitrary<uint32<events>>() with
-            override _.Generator = genLogicalClock
-            override _.Shrinker _ = Seq.empty}
-*)  
     static member EventID() =
         {new Arbitrary<Event.ID>() with
             override _.Generator = genEventID                            
+            override _.Shrinker _ = Seq.empty}
+
+    static member Storage() =
+        {new Arbitrary<Storage<byte, byte>>() with
+            override _.Generator = genStorage
             override _.Shrinker _ = Seq.empty}
 
     static member Database() =
@@ -71,13 +72,13 @@ test
 (** TODO: this sometimes fails with (StdGen (1022952468, 297233842)) *)
 test
     "Storing events locally is idempotent"
-    (fun (db: Database<EventVal>) (inputEvents: (Event.ID * byte) list) ->
+    (fun (storage: Storage<byte, byte>) (inputEvents: (byte * byte) list) ->
         seq {
             for _ in 1..100 do
-                db.WriteEvents None inputEvents
+                storage.WriteEvents inputEvents
 
                 let (outputEvents, _) = 
-                    db.ReadEvents 0u<events>
+                    storage.ReadEvents 0
 
                 yield inputEvents = outputEvents
         } 
