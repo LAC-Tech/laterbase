@@ -46,14 +46,14 @@ type Address(id: byte array) =
         |> String.concat ""
 
 // All of the messages must be idempotent
-type Message<'e> =
+type Message<'id, 'e> =
     | Sync of Address
     | SendEvents of 
         since: uint64<events> * 
         destAddr: Address
     | StoreEvents of 
         from: (Address * uint64<events>) option *
-        events:  (Event.ID * 'e) list
+        events:  ('id * 'e) list
 
 type Storage<'k, 'v>() =
     member val internal Events = SortedDictionary<'k, 'v>()
@@ -62,7 +62,7 @@ type Storage<'k, 'v>() =
     /// Returns events in transaction order, ie the order they were written
     member self.ReadEvents (since: uint64) =
         let events = 
-            self.AppendLog.Skip (Checked.int since)
+            self.AppendLog.Skip ((Checked.int since) - 1)
             |> Seq.choose (fun eventId -> 
                 self.Events
                 |> dictGet eventId
@@ -89,8 +89,8 @@ type Storage<'k, 'v>() =
         $"Storage [Events {es}] [AppendLog {appendLogStr}]"
 
 /// At this point we know nothing about the address, it's just an ID
-type Database<'e>() =
-    member val internal Storage = Storage<Event.ID, 'e>()
+type Database<'id, 'e>() =
+    member val internal Storage = Storage<'id, 'e>()
     member val internal VersionVector =
         SortedDictionary<Address, uint64<events>>()    
 
@@ -107,7 +107,7 @@ type Database<'e>() =
 
     member self.WriteEvents from newEvents =
         // If it came from another replica, update version vec to reflect this
-        from |> Option.iter (fun (addr, lc) -> self.VersionVector[addr] <- lc)
+        from |> Option.iter (self.VersionVector.Add)
         self.Storage.WriteEvents newEvents
 
     override self.ToString() = 
@@ -117,22 +117,24 @@ type Database<'e>() =
 
         $"Database [{self.Storage}] [VersionVector {vvStr}]"
 
-let converged (db1: Database<'e>) (db2: Database<'e>) =
+let converged (db1: Database<'id, 'e>) (db2: Database<'id, 'e>) =
     let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)
     es1.SequenceEqual(es2)
 
-type Replica<'e> = {Db: Database<'e>; Addr: Address}
+type Replica<'id, 'e> = {Db: Database<'id, 'e>; Addr: Address}
 
-type Sender<'e> = Address -> Message<'e> -> unit
+type Sender<'id, 'e> = Address -> Message<'id, 'e> -> unit
 
 
 /// Modifies the database based on msg, then returns response messages to send
-let recv<'e> (src: Replica<'e>) (send: Sender<'e>) = function
+let recv<'id, 'e> (src: Replica<'id, 'e>) = function
     | Sync destAddr ->
         let since = src.Db.GetLogicalClock destAddr
         let (events, lc) = src.Db.ReadEvents since
-        StoreEvents (Some (src.Addr, lc), List.ofSeq events) |> send destAddr
+        seq { destAddr, StoreEvents (Some (src.Addr, lc), List.ofSeq events) }
     | SendEvents (since, destAddr) ->
         let (events, lc) = src.Db.ReadEvents since
-        StoreEvents (Some (src.Addr, lc), List.ofSeq events) |> send destAddr
-    | StoreEvents (from, events) -> src.Db.WriteEvents from events
+        seq{ destAddr, StoreEvents (Some (src.Addr, lc), List.ofSeq events)}
+    | StoreEvents (from, events) -> 
+        src.Db.WriteEvents from events
+        Seq.empty
