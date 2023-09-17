@@ -82,9 +82,9 @@ type Storage<'k, 'v>() =
 
         let appendLogStr = 
             [for id in self.AppendLog -> $"{id}" ]
-            |> String.concat ";"
+            |> String.concat " "
 
-        $"Storage [Events {es}] [AppendLog {appendLogStr}]"
+        $"{es}\n└{appendLogStr}"
 
 type VersionVector() = 
     member val internal State = SortedDictionary<Address, uint64<events>>()
@@ -100,8 +100,10 @@ type VersionVector() =
         self.State[addr] <- counter
 
     override self.ToString() =
-        [for v in self.State -> $"({v.Key}, {v.Value})" ] |> String.concat ";"
-
+        let elems = 
+            [for v in self.State -> $"{v.Key}:{v.Value}" ]
+            |> String.concat ","
+        $"<{elems}>"
     
 /// At this point we know nothing about the address, it's just an ID
 type Database<'id, 'e>() =
@@ -121,7 +123,7 @@ type Database<'id, 'e>() =
         self.Storage.WriteEvents newEvents
 
     override self.ToString() = 
-        $"Database [{self.Storage}] [VersionVector {self.Storage}]"
+        $"Database\n└{self.Storage}\n└{self.VersionVector}"
 
 let converged (db1: Database<'id, 'e>) (db2: Database<'id, 'e>) =
     let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)
