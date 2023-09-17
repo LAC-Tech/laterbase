@@ -47,14 +47,11 @@ type Address(id: byte array) =
 
 // All of the messages must be idempotent
 [<IsReadOnly; Struct>]
-type Message<'e> =
+type Message<'id, 'e> =
     | Sync of Address
-    | SendEvents of 
-        since: uint64<events> * 
-        destAddr: Address
     | StoreEvents of 
         from: (Address * uint64<events>) option *
-        events:  (Event.ID * 'e) list
+        events:  ('id * 'e) list
 
 type Storage<'k, 'v>() =
     member val internal Events = SortedDictionary<'k, 'v>()
@@ -63,7 +60,7 @@ type Storage<'k, 'v>() =
     /// Returns events in transaction order, ie the order they were written
     member self.ReadEvents (since: uint64) =
         let events = 
-            self.AppendLog.Skip (Checked.int since)
+            self.AppendLog.Skip ((Checked.int since) - 1)
             |> Seq.choose (fun eventId -> 
                 self.Events
                 |> dictGet eventId
@@ -99,7 +96,7 @@ type VersionVector() =
     member self.Get(addr: Address) =
         self.State |> dictGet addr |> Option.defaultValue 0UL<events>
 
-    member self.Add(addr: Address, counter: uint64<events) =
+    member self.Add(addr: Address, counter: uint64<events>) =
         self.State[addr] <- counter
 
     override self.ToString() =
@@ -107,12 +104,13 @@ type VersionVector() =
 
     
 /// At this point we know nothing about the address, it's just an ID
-type Database<'e>() =
-    member val internal Storage = Storage<Event.ID, 'e>()
+type Database<'id, 'e>() =
+    member val internal Storage = Storage<'id, 'e>()
     member val internal VersionVector = VersionVector()
 
-    /// Returns events in transaction order, ie the order they were written
-    member self.ReadEvents (since: uint64<events>) =
+    /// Returns new events from the perspective of the destAddr
+    member self.ReadEvents (destAddr: Address) =
+        let since: uint64<events> = self.VersionVector.Get destAddr
         let (events, lc) = self.Storage.ReadEvents (uint64 since)
         let lc = Checked.uint64 lc
         (events, lc * 1uL<events>)
@@ -125,22 +123,20 @@ type Database<'e>() =
     override self.ToString() = 
         $"Database [{self.Storage}] [VersionVector {self.Storage}]"
 
-let converged (db1: Database<'e>) (db2: Database<'e>) =
+let converged (db1: Database<'id, 'e>) (db2: Database<'id, 'e>) =
     let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)
     es1.SequenceEqual(es2)
 
-type Replica<'e> = {Db: Database<'e>; Addr: Address}
+type Replica<'id, 'e> = {Db: Database<'id, 'e>; Addr: Address}
 
-type Sender<'e> = Address -> Message<'e> -> unit
+type Sender<'id, 'e> = Address -> Message<'id, 'e> -> unit
 
 
 /// Modifies the database based on msg, then returns response messages to send
-let recv<'e> (src: Replica<'e>) (send: Sender<'e>) = function
+let recv<'id, 'e> (src: Replica<'id, 'e>) = function
     | Sync destAddr ->
-        let since = src.Db.GetLogicalClock destAddr
-        let (events, lc) = src.Db.ReadEvents since
-        StoreEvents (Some (src.Addr, lc), List.ofSeq events) |> send destAddr
-    | SendEvents (since, destAddr) ->
-        let (events, lc) = src.Db.ReadEvents since
-        StoreEvents (Some (src.Addr, lc), List.ofSeq events) |> send destAddr
-    | StoreEvents (from, events) -> src.Db.WriteEvents from events
+        let (events, lc) = src.Db.ReadEvents destAddr
+        seq { destAddr, StoreEvents (Some (src.Addr, lc), List.ofSeq events) }
+    | StoreEvents (from, events) -> 
+        src.Db.WriteEvents from events
+        Seq.empty
