@@ -47,11 +47,11 @@ type Address(id: byte array) =
 
 // All of the messages must be idempotent
 [<IsReadOnly; Struct>]
-type Message<'id, 'e> =
+type Message<'k, 'v> =
     | Sync of Address
     | StoreEvents of 
         from: (Address * uint64<events>) option *
-        events:  ('id * 'e) list
+        events:  ('k * 'v) list
 
 type Storage<'k, 'v>() =
     member val internal Events = SortedDictionary<'k, 'v>()
@@ -66,9 +66,9 @@ type Storage<'k, 'v>() =
                 |> dictGet eventId
                 |> Option.map (fun v -> (eventId, v))
             )
-
-        let localLogicalTime = Checked.uint64 self.AppendLog.Count
-        (events, localLogicalTime)
+        
+        let totalNumEvents = Checked.uint64 self.AppendLog.Count
+        (events, totalNumEvents)
 
     member self.WriteEvents newEvents =
         for (k, v) in newEvents do
@@ -86,7 +86,7 @@ type Storage<'k, 'v>() =
 
         $"{es}\n└{appendLogStr}"
 
-type VersionVector() = 
+type LogicalClock() = 
     member val internal State = SortedDictionary<Address, uint64<events>>()
 
     member self.Update(addr: Address) =
@@ -108,22 +108,22 @@ type VersionVector() =
 /// At this point we know nothing about the address, it's just an ID
 type Database<'id, 'e>() =
     member val internal Storage = Storage<'id, 'e>()
-    member val internal VersionVector = VersionVector()
+    member val internal LogicalClock = LogicalClock()
 
     /// Returns new events from the perspective of the destAddr
     member self.ReadEvents (destAddr: Address) =
-        let since: uint64<events> = self.VersionVector.Get destAddr
-        let (events, lc) = self.Storage.ReadEvents (uint64 since)
-        let lc = Checked.uint64 lc
-        (events, lc * 1uL<events>)
+        let since: uint64<events> = self.LogicalClock.Get destAddr
+        let (events, totalNumEvents) = self.Storage.ReadEvents (uint64 since)
+        let totalNumEvents = totalNumEvents * 1uL<events>
+        (events, totalNumEvents)
 
     member self.WriteEvents from newEvents =
         // If it came from another replica, update version vec to reflect this
-        from |> Option.iter self.VersionVector.Add
+        from |> Option.iter self.LogicalClock.Add
         self.Storage.WriteEvents newEvents
 
     override self.ToString() = 
-        $"Database\n└{self.Storage}\n└{self.VersionVector}"
+        $"Database\n└{self.Storage}\n└{self.LogicalClock}"
 
 let converged (db1: Database<'id, 'e>) (db2: Database<'id, 'e>) =
     let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)
@@ -132,7 +132,6 @@ let converged (db1: Database<'id, 'e>) (db2: Database<'id, 'e>) =
 type Replica<'id, 'e> = {Db: Database<'id, 'e>; Addr: Address}
 
 type Sender<'id, 'e> = Address -> Message<'id, 'e> -> unit
-
 
 /// Modifies the database based on msg, then returns response messages to send
 let recv<'id, 'e> (src: Replica<'id, 'e>) = function
