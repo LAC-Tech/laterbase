@@ -21,11 +21,16 @@ module Time =
     type Valid<'t> = Valid of 't
 
     [<Measure>] type ms
-    let s = 1000L<ms>
-    let m = 60L * s
-    let h = 60L * m
+    [<Measure>] type s
+    [<Measure>] type m
+    [<Measure>] type h
+    let msPerS: int64<ms/s> = 1000L<ms/s>
+    let sPerM: int64<s/m> = 60L<s/m>
+    let mPerH: int64<m/h> = 60L<m/h>
 
 [<Measure>] type events
+[<Measure>] type received
+[<Measure>] type sent
 
 module Event = 
     /// IDs must be globally unique and orderable. They should contain within
@@ -46,11 +51,12 @@ type Address(id: byte array) =
         |> String.concat ""
 
 // All of the messages must be idempotent
-[<IsReadOnly; Struct>]
+[<IsReadOnly>]
 type Message<'k, 'v> =
     | Sync of Address
+    | StoreAck of uint64<sent events>
     | StoreEvents of 
-        from: (Address * uint64<events>) option *
+        from: (Address * uint64<received events>) option *
         events:  ('k * 'v) list
 
 type Storage<'k, 'v>() =
@@ -64,9 +70,8 @@ type Storage<'k, 'v>() =
             |> dictGet eventId 
             |> Option.map (fun v -> (eventId, v))
 
-        let events = 
-            self.AppendLog.Skip ((Checked.int since) - 1)
-            |> Seq.choose kvPair
+        let events =
+            (Checked.int since) - 1 |> self.AppendLog.Skip |> Seq.choose kvPair
         
         let totalNumEvents = Checked.uint64 self.AppendLog.Count
         (events, totalNumEvents)
@@ -76,12 +81,12 @@ type Storage<'k, 'v>() =
             if self.Events.TryAdd(k, v) then
                 self.AppendLog.Add k
 
-    override self.ToString() = 
+    override self.ToString() =
         let es = 
             [for e in self.Events -> $"({e.Key}, {e.Value})" ]
             |> String.concat ";"
 
-        let appendLogStr = 
+        let appendLogStr =
             [for id in self.AppendLog -> $"{id}" ]
             |> String.concat " "
 
@@ -89,17 +94,14 @@ type Storage<'k, 'v>() =
 
 /// Double sided counter so we can just send single counters across the network
 /// TODO save some space and just store the difference?
-type Counter = {sent: uint64<events>; received: uint64<events>}
+type Counter = {sent: uint64<sent events>; received: uint64<received events>}
+let ZeroCounter = {sent = 0UL<sent events>; received = 0UL<received events>}
 
 type LogicalClock() = 
-    member val internal State = SortedDictionary<Address, uint64<events>>()
-
-    member self.Update(addr: Address) =
-        let c = self.State |> dictGet addr |> Option.defaultValue 0UL<events>
-        self.State[addr] <- c + 1UL<events>
+    member val internal State = SortedDictionary<Address, Counter>()
 
     member self.Get(addr: Address) =
-        self.State |> dictGet addr |> Option.defaultValue 0UL<events>
+        self.State |> dictGet addr |> Option.defaultValue ZeroCounter
 
     member self.Add(addr: Address, counter: uint64<events>) =
         self.State[addr] <- counter
