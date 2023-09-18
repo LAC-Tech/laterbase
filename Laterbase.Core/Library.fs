@@ -59,13 +59,14 @@ type Storage<'k, 'v>() =
 
     /// Returns events in transaction order, ie the order they were written
     member self.ReadEvents (since: uint64) =
+        let kvPair eventId =
+            self.Events 
+            |> dictGet eventId 
+            |> Option.map (fun v -> (eventId, v))
+
         let events = 
             self.AppendLog.Skip ((Checked.int since) - 1)
-            |> Seq.choose (fun eventId -> 
-                self.Events
-                |> dictGet eventId
-                |> Option.map (fun v -> (eventId, v))
-            )
+            |> Seq.choose kvPair
         
         let totalNumEvents = Checked.uint64 self.AppendLog.Count
         (events, totalNumEvents)
@@ -85,6 +86,10 @@ type Storage<'k, 'v>() =
             |> String.concat " "
 
         $"{es}\n└{appendLogStr}"
+
+/// Double sided counter so we can just send single counters across the network
+/// TODO save some space and just store the difference?
+type Counter = {sent: uint64<events>; received: uint64<events>}
 
 type LogicalClock() = 
     member val internal State = SortedDictionary<Address, uint64<events>>()
