@@ -71,7 +71,8 @@ type Storage<'k, 'v>() =
             |> Option.map (fun v -> (eventId, v))
 
         let events =
-            (Checked.int since) - 1 |> self.AppendLog.Skip |> Seq.choose kvPair
+            self.AppendLog.Skip (Checked.int since - 1) 
+            |> Seq.choose kvPair
         
         let totalNumEvents = Checked.uint64 self.AppendLog.Count
         (events, totalNumEvents)
