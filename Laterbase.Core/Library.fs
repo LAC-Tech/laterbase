@@ -101,8 +101,10 @@ let ZeroCounter = {sent = 0UL<sent events>; received = 0UL<received events>}
 type LogicalClock() = 
     member val internal State = SortedDictionary<Address, Counter>()
 
-    member self.Get(addr: Address) =
+    member private self.Get(addr: Address) =
         self.State |> dictGet addr |> Option.defaultValue ZeroCounter
+
+    member self.EventsReceivedFrom addr = (self.Get addr).received
 
     member self.Add(addr: Address, counter: uint64<events>) =
         self.State[addr] <- counter
@@ -120,9 +122,9 @@ type Database<'id, 'e>() =
 
     /// Returns new events from the perspective of the destAddr
     member self.ReadEvents (destAddr: Address) =
-        let since: uint64<events> = self.LogicalClock.Get destAddr
+        let since: uint64<received events> = self.LogicalClock.Get destAddr
         let (events, totalNumEvents) = self.Storage.ReadEvents (uint64 since)
-        let totalNumEvents = totalNumEvents * 1uL<events>
+        let totalNumEvents = totalNumEvents * 1uL<received events>
         (events, totalNumEvents)
 
     member self.WriteEvents from newEvents =
