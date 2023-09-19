@@ -12,6 +12,8 @@ module Option =
     let ofTry (found, value) = if found then Some value else None
 
 let dictGet k (dict: IDictionary<'k, 'v>) = dict.TryGetValue k |> Option.ofTry
+let dictGetOrDefault k defaultValue (dict: IDictionary<'k, 'v>)  = 
+    dictGet k dict |> Option.defaultValue defaultValue
 
 /// Wrappers purely so one isn't passed in when the other is expected
 module Time =
@@ -51,13 +53,13 @@ type Address(id: byte array) =
         |> String.concat ""
 
 // All of the messages must be idempotent
-[<IsReadOnly>]
+[<Struct; IsReadOnly>]
 type Message<'k, 'v> =
     | Sync of Address
-    | StoreAck of uint64<sent events>
     | StoreEvents of 
         from: (Address * uint64<received events>) option *
         events:  ('k * 'v) list
+    //| StoreEventsAck of uint64<sent events>
 
 type Storage<'k, 'v>() =
     member val internal Events = SortedDictionary<'k, 'v>()
@@ -66,8 +68,7 @@ type Storage<'k, 'v>() =
     /// Returns events in transaction order, ie the order they were written
     member self.ReadEvents (since: uint64) =
         let kvPair eventId =
-            self.Events 
-            |> dictGet eventId 
+            dictGet eventId self.Events  
             |> Option.map (fun v -> (eventId, v))
 
         let events =
@@ -84,36 +85,45 @@ type Storage<'k, 'v>() =
 
     override self.ToString() =
         let es = 
-            [for e in self.Events -> $"({e.Key}, {e.Value})" ]
-            |> String.concat ";"
+            [for e in self.Events -> $"{e.Key}, {e.Value}" ]
+            |> String.concat "; "
 
         let appendLogStr =
             [for id in self.AppendLog -> $"{id}" ]
-            |> String.concat " "
+            |> String.concat ", "
 
-        $"{es}\n└{appendLogStr}"
+        $"events: [{es}]\n└log: [{appendLogStr}]"
 
-/// Double sided counter so we can just send single counters across the network
-/// TODO save some space and just store the difference?
-type Counter = {sent: uint64<sent events>; received: uint64<received events>}
-let ZeroCounter = {sent = 0UL<sent events>; received = 0UL<received events>}
+type LogicalClock() =
+    // Double sided counter so we can just send single counters across the network
+    // TODO save some space and just store the difference?
+    member val internal Sent = 
+        SortedDictionary<Address, uint64<sent events>>()
+    member val internal Received = 
+        SortedDictionary<Address, uint64<received events>>()  
 
-type LogicalClock() = 
-    member val internal State = SortedDictionary<Address, Counter>()
+    member self.EventsReceivedFrom addr = 
+        dictGetOrDefault addr 0UL<received events> self.Received
+    
+    member self.EventsSentFrom addr = 
+        dictGetOrDefault addr 0UL<received events> self.Received
 
-    member private self.Get(addr: Address) =
-        self.State |> dictGet addr |> Option.defaultValue ZeroCounter
+    member self.AddReceived(addr: Address, counter: uint64<received events>) =
+        self.Received[addr] <- counter
 
-    member self.EventsReceivedFrom addr = (self.Get addr).received
-
-    member self.Add(addr: Address, counter: uint64<events>) =
-        self.State[addr] <- counter
+    member self.AddSent(addr: Address, counter: uint64<sent events>) =
+        self.Sent[addr] <- counter
 
     override self.ToString() =
-        let elems = 
-            [for v in self.State -> $"{v.Key}:{v.Value}" ]
-            |> String.concat ","
-        $"<{elems}>"
+        // Parker 1983 syntax
+        let stringify (dict: IDictionary<_, _>) =
+            let elems = 
+                [for v in dict -> $"{v.Key}:{v.Value}" ]
+                |> String.concat ","
+            $"<{elems}>"
+
+        $"sent: {stringify self.Sent}\n└received: {stringify self.Received}" 
+
     
 /// At this point we know nothing about the address, it's just an ID
 type Database<'id, 'e>() =
@@ -122,14 +132,14 @@ type Database<'id, 'e>() =
 
     /// Returns new events from the perspective of the destAddr
     member self.ReadEvents (destAddr: Address) =
-        let since: uint64<received events> = self.LogicalClock.Get destAddr
+        let since = self.LogicalClock.EventsReceivedFrom destAddr
         let (events, totalNumEvents) = self.Storage.ReadEvents (uint64 since)
         let totalNumEvents = totalNumEvents * 1uL<received events>
         (events, totalNumEvents)
 
     member self.WriteEvents from newEvents =
         // If it came from another replica, update version vec to reflect this
-        from |> Option.iter self.LogicalClock.Add
+        from |> Option.iter self.LogicalClock.AddReceived
         self.Storage.WriteEvents newEvents
 
     override self.ToString() = 
