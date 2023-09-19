@@ -3,6 +3,14 @@ open System.Collections.Generic
 open System.Diagnostics.Tracing
 open System.Threading.Tasks
 
+open Mindmagma.Curses
+
+let Screen = NCurses.InitScreen()
+NCurses.NoDelay(Screen, true)
+NCurses.NoEcho()
+NCurses.AddString("HELLO FROM COURSES")
+NCurses.Refresh()
+
 (*
 open Laterbase.Core
 open Laterbase.Simulated

@@ -14,4 +14,8 @@
     <ProjectReference Include="..\Laterbase.Core\Laterbase.Core.fsproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="dotnet-curses" Version="1.0.3" />
+  </ItemGroup>
+
 </Project>
