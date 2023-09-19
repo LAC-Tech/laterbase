@@ -72,13 +72,13 @@ type Storage<'k, 'v>() =
     member val internal AppendLog = ResizeArray<'k>()
 
     /// Returns events in transaction order, ie the order they were written
-    member self.ReadEvents (since: uint64) =
+    member self.ReadEvents(since: uint64) =
         let kvPair eventId =
             dictGet eventId self.Events  
             |> Option.map (fun v -> (eventId, v))
 
         let events =
-            self.AppendLog.Skip (Checked.int since - 1) 
+            self.AppendLog.Skip (Checked.int since - 1)
             |> Seq.choose kvPair
         
         let totalNumEvents = Checked.uint64 self.AppendLog.Count

@@ -8,8 +8,14 @@ open Mindmagma.Curses
 let Screen = NCurses.InitScreen()
 NCurses.NoDelay(Screen, true)
 NCurses.NoEcho()
-NCurses.AddString("HELLO FROM COURSES")
-NCurses.Refresh()
+NCurses.AddString("HELLO FROM CURSES") |> ignore
+NCurses.Refresh() |> ignore
+NCurses.GetChar() |> ignore
+
+type MyCursesLibraryNames() =
+    inherit CursesLibraryNames()
+    override this.ReplaceLinuxDefaults with get() = true
+    override this.NamesLinux with get() = List ["libncursesw.so"]
 
 (*
 open Laterbase.Core
