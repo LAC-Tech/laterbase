@@ -119,22 +119,8 @@ test
         r1.Db.WriteEvents None events1
         r2.Db.WriteEvents None events2
 
-        let syncResMsgs1 = recv r1 (Sync r2.Addr)
-        syncResMsgs1 |> send
+        recv r1 (Sync r2.Addr) |> send
+        recv r2 (Sync r1.Addr) |> send
 
-        let syncResMsgs2 = recv r2 (Sync r1.Addr)
-        syncResMsgs2 |> send
-
-        let result = converged r1.Db r2.Db
-
-        if (not result) then
-            eprintfn "Databases did not converge\n"
-            eprintfn "Sync Response Messages 1 = %A\n" syncResMsgs1
-            eprintfn "Sync Response Messages 2 = %A\n" syncResMsgs2
-            eprintfn "Address 1 = %A" r1.Addr
-            eprintfn "Database 1 = %A\n" r1.Db
-            eprintfn "Address 2 = %A" r2.Addr
-            eprintfn "Database 2 = %A\n" r2.Db
-
-        result
+        converged r1.Db r2.Db
     )
