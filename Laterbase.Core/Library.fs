@@ -52,14 +52,20 @@ type Address(id: byte array) =
         |> Array.map (fun b -> b.ToString("X2"))
         |> String.concat ""
 
-// All of the messages must be idempotent
 [<Struct; IsReadOnly>]
-type Message<'k, 'v> =
+type MessagePayload<'k, 'v> =
     | Sync of Address
     | StoreEvents of 
         from: (Address * uint64<received events>) option *
         events:  ('k * 'v) list
     //| StoreEventsAck of uint64<sent events>
+
+// All of the messages must be idempotent
+[<Struct; IsReadOnly>] 
+type Message<'k, 'v> = {
+    Dest: Address;
+    Payload: MessagePayload<'k, 'v>
+}
 
 type Storage<'k, 'v>() =
     member val internal Events = SortedDictionary<'k, 'v>()
@@ -90,9 +96,9 @@ type Storage<'k, 'v>() =
 
         let appendLogStr =
             [for id in self.AppendLog -> $"{id}" ]
-            |> String.concat ", "
+            |> String.concat "; "
 
-        $"events: [{es}]\n└log: [{appendLogStr}]"
+        $"└ events = [{es}]\n└ log = [{appendLogStr}]"
 
 type LogicalClock() =
     // Double sided counter so we can just send single counters across the network
@@ -106,7 +112,7 @@ type LogicalClock() =
         dictGetOrDefault addr 0UL<received events> self.Received
     
     member self.EventsSentFrom addr = 
-        dictGetOrDefault addr 0UL<received events> self.Received
+        dictGetOrDefault addr 0UL<sent events> self.Sent
 
     member self.AddReceived(addr: Address, counter: uint64<received events>) =
         self.Received[addr] <- counter
@@ -122,7 +128,7 @@ type LogicalClock() =
                 |> String.concat ","
             $"<{elems}>"
 
-        $"sent: {stringify self.Sent}\n└received: {stringify self.Received}" 
+        $"└ sent = {stringify self.Sent}\n└ received = {stringify self.Received}" 
 
     
 /// At this point we know nothing about the address, it's just an ID
@@ -132,7 +138,7 @@ type Database<'id, 'e>() =
 
     /// Returns new events from the perspective of the destAddr
     member self.ReadEvents (destAddr: Address) =
-        let since = self.LogicalClock.EventsReceivedFrom destAddr
+        let since = self.LogicalClock.EventsSentFrom destAddr
         let (events, totalNumEvents) = self.Storage.ReadEvents (uint64 since)
         let totalNumEvents = totalNumEvents * 1uL<received events>
         (events, totalNumEvents)
@@ -143,13 +149,13 @@ type Database<'id, 'e>() =
         self.Storage.WriteEvents newEvents
 
     override self.ToString() = 
-        $"Database\n└{self.Storage}\n└{self.LogicalClock}"
+        $"Database\n{self.Storage}\n{self.LogicalClock}"
 
 let converged (db1: Database<'id, 'e>) (db2: Database<'id, 'e>) =
     let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)
     es1.SequenceEqual(es2)
 
-type Replica<'id, 'e> = {Db: Database<'id, 'e>; Addr: Address}
+type Replica<'id, 'e> = {Addr: Address; Db: Database<'id, 'e>}
 
 type Sender<'id, 'e> = Address -> Message<'id, 'e> -> unit
 
@@ -157,7 +163,8 @@ type Sender<'id, 'e> = Address -> Message<'id, 'e> -> unit
 let recv<'id, 'e> (src: Replica<'id, 'e>) = function
     | Sync destAddr ->
         let (events, lc) = src.Db.ReadEvents destAddr
-        seq { destAddr, StoreEvents (Some (src.Addr, lc), List.ofSeq events) }
+        let payload = StoreEvents (Some (src.Addr, lc), List.ofSeq events)
+        seq { {Dest = destAddr; Payload = payload } }
     | StoreEvents (from, events) -> 
         src.Db.WriteEvents from events
         Seq.empty

@@ -96,11 +96,11 @@ test
         |> Seq.forall id
     )
 
-let rec sendToNetwork network addrMsgPairs = 
-    for (addr, msg) in addrMsgPairs do
-        let db = network |> Map.find addr
-        let replica = {Db = db; Addr = addr}
-        sendToNetwork network (recv replica msg)
+let rec sendToNetwork network msgs = 
+    for msg in msgs do
+        let db = network |> Map.find msg.Dest
+        let replica = {Db = db; Addr = msg.Dest}
+        sendToNetwork network (recv replica msg.Payload)
 
 test 
     "two databases will have the same events if they sync with each other"
@@ -131,8 +131,10 @@ test
             eprintfn "Databases did not converge\n"
             eprintfn "Sync Response Messages 1 = %A\n" syncResMsgs1
             eprintfn "Sync Response Messages 2 = %A\n" syncResMsgs2
-            eprintfn "db1 = %A\n" r1.Db
-            eprintfn "db2 = %A\n" r2.Db
+            eprintfn "Address 1 = %A" r1.Addr
+            eprintfn "Database 1 = %A\n" r1.Db
+            eprintfn "Address 2 = %A" r2.Addr
+            eprintfn "Database 2 = %A\n" r2.Db
 
         result
     )
