@@ -128,8 +128,10 @@ type LogicalClock() =
                 |> String.concat ","
             $"<{elems}>"
 
-        $"└ sent = {stringify self.Sent}\n└ received = {stringify self.Received}" 
-
+        [
+            $"└ sent = {stringify self.Sent}"; 
+            $"└ received = {stringify self.Received}"
+        ] |> String.concat "\n"
     
 /// At this point we know nothing about the address, it's just an ID
 type Database<'id, 'e>() =
@@ -143,7 +145,7 @@ type Database<'id, 'e>() =
         let totalNumEvents = totalNumEvents * 1uL<received events>
         (events, totalNumEvents)
 
-    member self.WriteEvents from newEvents =
+    member self.WriteEvents(from, newEvents) =
         // If it came from another replica, update version vec to reflect this
         from |> Option.iter self.LogicalClock.AddReceived
         self.Storage.WriteEvents newEvents
@@ -166,5 +168,5 @@ let recv<'id, 'e> (src: Replica<'id, 'e>) = function
         let payload = StoreEvents (Some (src.Addr, lc), List.ofSeq events)
         seq { {Dest = destAddr; Payload = payload } }
     | StoreEvents (from, events) -> 
-        src.Db.WriteEvents from events
+        src.Db.WriteEvents(from, events)
         Seq.empty
