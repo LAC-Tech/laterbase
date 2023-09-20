@@ -48,26 +48,46 @@ let updateGui count =
     map.Title <- $"Count: {count}"
     map.SetNeedsDisplay()
 
+let mainLoop () =
+    Application.Init()
+    let runState = ref (Application.Begin (new ExampleWindow()))
+    //Application.RunLoop(runState)
+    
+    let firstIteration = ref true
+    runState.Value.Toplevel.Running <- true
+
+    let rec loop () =
+        let breakLoop =
+            (not runState.Value.Toplevel.Running) ||
+            (Application.ExitRunLoopAfterFirstIteration &&
+            not firstIteration.Value)
+
+        if breakLoop then
+            ()
+        else 
+            Application.RunMainLoopIteration(runState, true, firstIteration)
+            loop ()
+
+    loop ()
+
         
 [<EntryPoint>]
 let main _ =
-    let mainLoop = task {
-        let mutable counter = 0
+    let mutable counter = 0
+    let timer = new Timers.Timer(TimeSpan.FromSeconds 1)
+    timer.Elapsed.Add(fun _ ->
+        counter <- counter + 1
 
-        while true do
-            do! Threading.Tasks.Task.Delay (TimeSpan.FromSeconds 1)
+        Application.MainLoop.Invoke(fun _ -> 
+            map.Title <- $"Count: {counter}";
+            map.SetNeedsDisplay() |> ignore
+        )
+    )
 
-            counter <- counter + 1
+    timer.Start()
 
-            Application.MainLoop.Invoke(fun _ -> 
-                map.Title <- $"Count: {counter}";
-                map.SetNeedsDisplay() |> ignore
-            )
-    }
+    mainLoop ()
 
-    mainLoop.Start(Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext())
-
-    Application.Run<ExampleWindow>()
     Application.Shutdown()
 
     0
