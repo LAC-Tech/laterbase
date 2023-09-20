@@ -6,16 +6,7 @@ open System.Threading.Tasks
 open Terminal.Gui
 
 type Character(symbol: char, x: int, y: int) =
-    inherit View()
-    do
-        base.Width <- 1
-        base.Height <- 1
-        base.X <- x
-        base.Y <- y
-        base.Text <- symbol.ToString()
-
-    override this.Redraw(region: Rect) =
-        base.SetNeedsDisplay()
+    inherit View(x, y, symbol.ToString())
 
 type ExampleWindow() =
     inherit Window(
