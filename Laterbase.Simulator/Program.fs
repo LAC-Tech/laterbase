@@ -43,25 +43,32 @@ type ExampleWindow() =
             | Key.Esc -> Application.RequestStop ()
             | _ -> ()
         )
+
+let updateGui count =
+    map.Title <- $"Count: {count}"
+    map.SetNeedsDisplay()
+
         
 [<EntryPoint>]
 let main _ =
-    let mutable counter = 0
-    let timer = new Timers.Timer(TimeSpan.FromSeconds(1))
-    timer.Elapsed.AddHandler(Timers.ElapsedEventHandler (fun _ -> (
-        fun _ -> (
+    let mainLoop = task {
+        let mutable counter = 0
+
+        while true do
+            do! Threading.Tasks.Task.Delay (TimeSpan.FromSeconds 1)
+
             counter <- counter + 1
 
-            Application.MainLoop.Invoke(fun _ -> (
+            Application.MainLoop.Invoke(fun _ -> 
                 map.Title <- $"Count: {counter}";
                 map.SetNeedsDisplay() |> ignore
-            ))
-        )
-    )))
+            )
+    }
 
-    timer.Start ()
+    mainLoop.Start(Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext())
+
     Application.Run<ExampleWindow>()
-    Application.Shutdown ()
+    Application.Shutdown()
 
     0
 (*
