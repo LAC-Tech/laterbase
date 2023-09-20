@@ -116,8 +116,8 @@ test
         let send = sendToNetwork network
 
         // Populate the two databases with separate events
-        r1.Db.WriteEvents None events1
-        r2.Db.WriteEvents None events2
+        r1.Db.WriteEvents(None, events1)
+        r2.Db.WriteEvents(None, events2)
 
         recv r1 (Sync r2.Addr) |> send
         recv r2 (Sync r1.Addr) |> send

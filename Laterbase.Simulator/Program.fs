@@ -5,17 +5,23 @@ open System.Threading.Tasks
 
 open Mindmagma.Curses
 
-let Screen = NCurses.InitScreen()
-NCurses.NoDelay(Screen, true)
-NCurses.NoEcho()
-NCurses.AddString("HELLO FROM CURSES") |> ignore
-NCurses.Refresh() |> ignore
-NCurses.GetChar() |> ignore
-
 type MyCursesLibraryNames() =
     inherit CursesLibraryNames()
     override this.ReplaceLinuxDefaults with get() = true
     override this.NamesLinux with get() = List ["libncursesw.so"]
+
+let failIfNotZero n =
+    if n = 0 then failwithf "%A" n
+
+[<EntryPoint>]
+let main args =
+    let Screen = NCurses.InitScreen()
+    NCurses.AddString("HELLO FROM CURSES") |> ignore
+    NCurses.Refresh() |> ignore
+    NCurses.GetChar() |> ignore
+    NCurses.EndWin()
+
+    0
 
 (*
 open Laterbase.Core
