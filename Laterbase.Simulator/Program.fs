@@ -3,26 +3,54 @@ open System.Collections.Generic
 open System.Diagnostics.Tracing
 open System.Threading.Tasks
 
-open Mindmagma.Curses
+open Terminal.Gui
 
-type MyCursesLibraryNames() =
-    inherit CursesLibraryNames()
-    override this.ReplaceLinuxDefaults with get() = true
-    override this.NamesLinux with get() = List ["libncursesw.so"]
+type Character(symbol: char, x: int, y: int) =
+    inherit View()
+    do
+        base.Width <- 1
+        base.Height <- 1
+        base.X <- x
+        base.Y <- y
+        base.Text <- symbol.ToString()
 
-let failIfNotZero n =
-    if n = 0 then failwithf "%A" n
+    override this.Redraw(region: Rect) =
+        base.SetNeedsDisplay()
+
+type ExampleWindow() =
+    inherit Window(
+        "Roguelike Demo",
+        X = 0,
+        Y = 1,
+        Width = Dim.Fill(),
+        Height = Dim.Fill()
+    )
+
+    let map = new FrameView(
+        X = 0,
+        Y = 0,
+        Width = Dim.Fill(),
+        Height = Dim.Fill()
+    )
+
+    let player = new Character('@', 10, 10)
+    
+    do
+        map.Add player
+        base.Add map
+        
+        base.add_KeyPress(fun args ->
+            match args.KeyEvent.Key with
+            | Key.Esc -> Application.RequestStop ()
+            | _ -> ()
+        )
 
 [<EntryPoint>]
 let main args =
-    let Screen = NCurses.InitScreen()
-    NCurses.AddString("HELLO FROM CURSES") |> ignore
-    NCurses.Refresh() |> ignore
-    NCurses.GetChar() |> ignore
-    NCurses.EndWin()
+    Application.Run<ExampleWindow>()
+    Application.Shutdown ()
 
     0
-
 (*
 open Laterbase.Core
 open Laterbase.Simulated

@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="dotnet-curses" Version="1.0.3" />
+    <PackageReference Include="Terminal.Gui" Version="1.14.0" />
   </ItemGroup>
 
 </Project>
