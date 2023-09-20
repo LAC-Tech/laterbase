@@ -1,34 +1,43 @@
 ﻿open System
-open System.Collections.Generic
-open System.Diagnostics.Tracing
-open System.Threading.Tasks
 
 open Terminal.Gui
 
-type Character(symbol: char, x: int, y: int) =
-    inherit View(x, y, symbol.ToString())
+let speedMenu = 
+    seq {"Pause"; "Turtle"; "Llama"; "Cheetah"; "Tiger Beetle"} 
+    |> Seq.map (fun title -> MenuItem (Title = title))
+    |> Seq.toArray
+    |> fun items -> MenuBarItem("Speed", items)
+
+let menuBar = new MenuBar [|speedMenu|]
+
+type Replica(x: int, y: int) =
+    inherit View(x, y, "ᚠ")
 
 type ExampleWindow() =
-    inherit Window(
-        "Roguelike Demo",
-        X = 0,
-        Y = 1,
-        Width = Dim.Fill(),
-        Height = Dim.Fill()
-    )
-
-    let map = new FrameView(
+    inherit Toplevel(
         X = 0,
         Y = 0,
         Width = Dim.Fill(),
         Height = Dim.Fill()
     )
 
-    let player = new Character('@', 10, 10)
+    let replica1 = new Replica(10, 10)
+    let replica2 = new Replica(20, 10)
+
+    let map = new Window(
+        "Laterbase",
+        X = 0,
+        Y = 1,
+        Width = Dim.Fill(),
+        Height = Dim.Fill()
+    )
     
     do
-        map.Add player
+        map.Add replica1
+        map.Add replica2
         base.Add map
+        base.Add menuBar
+        
         
         base.add_KeyPress(fun args ->
             match args.KeyEvent.Key with
@@ -39,6 +48,7 @@ type ExampleWindow() =
 [<EntryPoint>]
 let main args =
     Application.Run<ExampleWindow>()
+
     Application.Shutdown ()
 
     0
