@@ -13,6 +13,14 @@ let menuBar = new MenuBar [|speedMenu|]
 type Replica(x: int, y: int) =
     inherit View(x, y, "ᚠ")
 
+let map = new Window(
+    "Laterbase",
+    X = 0,
+    Y = 1,
+    Width = Dim.Fill(),
+    Height = Dim.Fill()
+)
+
 type ExampleWindow() =
     inherit Toplevel(
         X = 0,
@@ -23,14 +31,6 @@ type ExampleWindow() =
 
     let replica1 = new Replica(10, 10)
     let replica2 = new Replica(20, 10)
-
-    let map = new Window(
-        "Laterbase",
-        X = 0,
-        Y = 1,
-        Width = Dim.Fill(),
-        Height = Dim.Fill()
-    )
     
     do
         map.Add replica1
@@ -38,17 +38,29 @@ type ExampleWindow() =
         base.Add map
         base.Add menuBar
         
-        
         base.add_KeyPress(fun args ->
             match args.KeyEvent.Key with
             | Key.Esc -> Application.RequestStop ()
             | _ -> ()
         )
-
+        
 [<EntryPoint>]
-let main args =
-    Application.Run<ExampleWindow>()
+let main _ =
+    let mutable counter = 0
+    let timer = new Timers.Timer(TimeSpan.FromSeconds(1))
+    timer.Elapsed.AddHandler(Timers.ElapsedEventHandler (fun _ -> (
+        fun _ -> (
+            counter <- counter + 1
 
+            Application.MainLoop.Invoke(fun _ -> (
+                map.Title <- $"Count: {counter}";
+                map.SetNeedsDisplay() |> ignore
+            ))
+        )
+    )))
+
+    timer.Start ()
+    Application.Run<ExampleWindow>()
     Application.Shutdown ()
 
     0
