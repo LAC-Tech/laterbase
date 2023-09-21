@@ -15,6 +15,9 @@ let dictGet k (dict: IDictionary<'k, 'v>) = dict.TryGetValue k |> Option.ofTry
 let dictGetOrDefault k defaultValue (dict: IDictionary<'k, 'v>)  = 
     dictGet k dict |> Option.defaultValue defaultValue
 
+type ConstraintViolation<'a> (reason: string, thing: 'a) =
+    inherit System.Exception (reason) 
+
 /// When a replica recorded an event
 [<Measure>] type transaction
 
@@ -70,39 +73,6 @@ type Message<'e> = {
     Payload: MessagePayload<'e>
 }
 
-type Storage<'k, 'v>() =
-    member val internal Events = SortedDictionary<'k, 'v>()
-    member val internal AppendLog = ResizeArray<'k>()
-
-    /// Returns events in transaction order, ie the order they were written
-    member self.ReadEvents(since: uint64) =
-        let kvPair eventId =
-            dictGet eventId self.Events  
-            |> Option.map (fun v -> (eventId, v))
-
-        let events =
-            self.AppendLog.Skip (Checked.int since - 1)
-            |> Seq.choose kvPair
-        
-        let totalNumEvents = Checked.uint64 self.AppendLog.Count
-        (events, totalNumEvents)
-
-    member self.WriteEvents newEvents =
-        for (k, v) in newEvents do
-            if self.Events.TryAdd(k, v) then
-                self.AppendLog.Add k
-
-    override self.ToString() =
-        let es = 
-            [for e in self.Events -> $"{e.Key}, {e.Value}" ]
-            |> String.concat "; "
-
-        let appendLogStr =
-            [for id in self.AppendLog -> $"{id}" ]
-            |> String.concat "; "
-
-        $"└ events = [{es}]\n└ log = [{appendLogStr}]"
-
 type LogicalClock() =
     // Double sided counter so we can just send single counters across the network
     // TODO save some space and just store the difference?
@@ -135,6 +105,52 @@ type LogicalClock() =
             $"└ sent = {stringify self.Sent}"; 
             $"└ received = {stringify self.Received}"
         ] |> String.concat "\n"
+
+type Storage<'k, 'v>() =
+    member val internal Events = SortedDictionary<'k, 'v>()
+    (**
+        This imposes a total order on a partial order.
+        IE events written to at the same time are concurrent.
+        Should it be a jagged array with concurrent events stored together? 
+    *)
+    member val internal AppendLog = ResizeArray<'k>()
+
+    /// Returns events in transaction order, ie the order they were written
+    member self.ReadEvents(since: uint64) =
+        let kvPair eventId =
+            dictGet eventId self.Events  
+            |> Option.map (fun v -> (eventId, v))
+
+        let events =
+            Seq.skip (Checked.int since - 1) self.AppendLog
+            |> Seq.choose kvPair
+        
+        let totalNumEvents = Checked.uint64 self.AppendLog.Count
+        (events, totalNumEvents)
+
+    member self.WriteEvents newEvents =
+        for (k, v) in newEvents do
+            if self.Events.TryAdd(k, v) then
+                self.AppendLog.Add k
+
+    // Not sure if 'consistent' is the word here
+    member self.Consistent() =
+        self.Events.Count = self.AppendLog.Count
+
+    override self.ToString() =
+        let es = 
+            [for e in self.Events -> $"{e.Key}, {e.Value}" ]
+            |> String.concat "; "
+
+        let appendLogStr =
+            [for id in self.AppendLog -> $"{id}" ]
+            |> String.concat "; "
+
+        $"└ events = [{es}]\n└ log = [{appendLogStr}]"
+
+type DatabaseViewData = {
+    Events: Data.DataTable
+}
     
 /// At this point we know nothing about the address, it's just an ID
 type Database<'e>() =
@@ -153,8 +169,23 @@ type Database<'e>() =
         from |> Option.iter self.LogicalClock.AddReceived
         self.Storage.WriteEvents newEvents
 
+        if not (self.Storage.Consistent()) then
+            raise (ConstraintViolation ("Storage is inconsistent", self))
+
+    member self.Inspect() =
+        let eventsDt = new Data.DataTable()
+        eventsDt.Columns.Add "Event ID" |> ignore
+        eventsDt.Columns.Add "Event Value" |> ignore
+
+        for e in self.Storage.Events do
+            eventsDt.Rows.Add(e.Key.ToString(), e.Value.ToString()) |> ignore
+
+        {Events = eventsDt }
+
     override self.ToString() = 
         $"Database\n{self.Storage}\n{self.LogicalClock}"
+
+
 
 let converged (db1: Database<'e>) (db2: Database<'e>) =
     let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)

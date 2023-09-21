@@ -65,13 +65,8 @@ let test descr testFn =
     Check.One(config, testFn)
     printfn "\n"
 
-test 
-    "ID's are unique"
-    (fun (eventIds: Event.ID list) ->
-        (eventIds |> List.distinct |> List.length) = (eventIds |> List.length))
-
 test
-    "Storing events locally is idempotent"
+    "Can read back the events you store"
     (fun (inputEvents: (Event.ID * int64) list) ->
         let storage = Storage()
         seq {

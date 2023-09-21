@@ -53,7 +53,7 @@ let mainLoop () =
     let firstIteration = ref true
     runState.Value.Toplevel.Running <- true
 
-    let mutable time = 0L<Time.ms>
+    let mutable time = 0L<ms>
 
     let rec loop () =
         let breakUiLoop =
@@ -71,19 +71,56 @@ let mainLoop () =
 
             map.Title <- dateTime.ToString()
             map.SetNeedsDisplay()
-            time <- time + 10L<Time.ms>
+            time <- time + 10L<ms>
             loop ()
 
     loop ()
 
+type DBExplorer(db: Database<'e>) =
+    inherit FrameView(
+        "Laterbase Explorer",
+        X = 0,
+        Y = 0,
+        Width = Dim.Fill(),
+        Height = Dim.Fill()
+    )
+
+    do 
+        let tableView = new TableView(
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill()
+        )
+
+        tableView.Table <- db.Inspect().Events
+
+        base.Add tableView
+
         
 [<EntryPoint>]
 let main _ =
-    
+    let db = Database()
 
-    mainLoop ()
+    db.WriteEvents(None, [
+        Event.ID.Generate(), "Monday"; 
+        Event.ID.Generate(), "Tuesday"
+    ])
 
+    Application.Init()
+    Application.Top.add_KeyPress(fun args ->
+        match args.KeyEvent.Key with
+        | Key.Esc -> Application.RequestStop ()
+        | _ -> ()
+    )
+    Application.Top.Add (new DBExplorer(db))
+    Application.Run()
     Application.Shutdown()
+
+    //mainLoop ()
+    //Application.Shutdown()
+
+
 
     0
 (*
