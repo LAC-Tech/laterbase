@@ -100,9 +100,9 @@ let rec sendToNetwork network msgs =
     for msg in msgs do
         let db = network |> Map.find msg.Dest
         let replica = {Db = db; Addr = msg.Dest}
-        sendToNetwork network (recv replica msg.Payload)
+        sendToNetwork network (send replica msg.Payload)
 
-let sendBetween = 
+let acrossNetwork = 
     List.map (fun r -> r.Addr, r.Db) >> Map.ofList >> sendToNetwork
 
 test 
@@ -115,18 +115,25 @@ test
         let r1 = {Db = Database(); Addr = addr1}
         let r2 = {Db = Database(); Addr = addr2}
 
-        let send = sendBetween [r1; r2]
-
         // Populate the two databases with separate events
         r1.Db.WriteEvents(None, events1)
         r2.Db.WriteEvents(None, events2)
 
         // Bi-directional sync
-        recv r1 (Sync r2.Addr) |> send
-        recv r2 (Sync r1.Addr) |> send
+        send r1 (Sync r2.Addr) |> acrossNetwork [r1; r2]
+        send r2 (Sync r1.Addr) |> acrossNetwork [r1; r2]
 
         converged r1.Db r2.Db
     )
+
+(*
+    Merging state-based CRDTs should be
+    - commutative
+    - idempotent
+    - associative
+
+    (Definition 2.3, Marc Shapiro, Nuno Preguiça, Carlos Baquero, and Marek Zawirski. Conflict-free replicated data types)
+*)
 
 test
     "syncing is commutative"
@@ -150,12 +157,70 @@ test
         rB1.Db.WriteEvents(None, eventsB)
         rB2.Db.WriteEvents(None, eventsB)
 
-        let send1 = sendBetween [rA1; rB1]
-        let send2 = sendBetween [rA2; rB2]
-
         // Sync 1 & 2 in different order; a . b = b . a
-        recv rA1 (Sync rB1.Addr) |> send1
-        recv rB2 (Sync rA2.Addr) |> send2
+        send rB1 (Sync rA1.Addr) |> acrossNetwork [rA1; rB1]
+        send rA2 (Sync rB2.Addr) |> acrossNetwork [rA2; rB2]
 
-        converged rB1.Db rA2.Db
+        converged rA1.Db rB2.Db
+    )
+
+test
+    "syncing is idempotent"
+    (fun
+        (addr: Address)
+        (events : (Event.ID * int) list) ->
+
+        let replica = {Addr = addr; Db = Database()}
+        let controlDb = Database()
+
+        replica.Db.WriteEvents(None, events)
+        controlDb.WriteEvents(None, events)
+
+        send replica (Sync replica.Addr) |> acrossNetwork [replica]
+
+        converged replica.Db controlDb
+    )
+
+test
+    "syncing is associative"
+    (fun
+        ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
+            (Address * Address * Address * Address * Address * Address))
+        (eventsA : (Event.ID * int) list)
+        (eventsB : (Event.ID * int) list)
+        (eventsC : (Event.ID * int) list) ->
+
+        let rA1 = {Db = Database(); Addr = addrA1}
+        let rB1 = {Db = Database(); Addr = addrB1}
+        let rC1 = {Db = Database(); Addr = addrC1}
+
+        let rA2 = {Db = Database(); Addr = addrA2}
+        let rB2 = {Db = Database(); Addr = addrB2}
+        let rC2 = {Db = Database(); Addr = addrC2}
+
+        // A replicas have same events
+        rA1.Db.WriteEvents(None, eventsA)
+        rA2.Db.WriteEvents(None, eventsA)
+
+        // B replicas have same events
+        rB1.Db.WriteEvents(None, eventsB)
+        rB2.Db.WriteEvents(None, eventsB)
+
+        // C replicas have same events
+        rC1.Db.WriteEvents(None, eventsC)
+        rC2.Db.WriteEvents(None, eventsC)
+
+        let acrossNetwork1 = acrossNetwork [rA1; rB1; rC1]
+        let acrossNetwork2 = acrossNetwork [rA2; rB2; rC2]
+
+        // (a . b) . c
+        send rB1 (Sync rA1.Addr) |> acrossNetwork1 
+        send rA1 (Sync rC1.Addr) |> acrossNetwork1
+
+        // a . (b . c)
+        send rC2 (Sync rB2.Addr) |> acrossNetwork2
+        send rB2 (Sync rA2.Addr) |> acrossNetwork2
+
+        converged rC1.Db rA2.Db
+        
     )
