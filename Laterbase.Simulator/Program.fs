@@ -53,7 +53,7 @@ let mainLoop () =
     let firstIteration = ref true
     runState.Value.Toplevel.Running <- true
 
-    let mutable counter = 0L<Time.ms>
+    let mutable time = 0L<Time.ms>
 
     let rec loop () =
         let breakUiLoop =
@@ -67,12 +67,11 @@ let mainLoop () =
             Application.RunMainLoopIteration(runState, false, firstIteration)
 
             let dateTime = 
-                DateTimeOffset.FromUnixTimeMilliseconds(int64 counter).DateTime
-
+                DateTimeOffset.FromUnixTimeMilliseconds(int64 time).DateTime
 
             map.Title <- dateTime.ToString()
             map.SetNeedsDisplay()
-            counter <- counter + 10L<Time.ms>
+            time <- time + 10L<Time.ms>
             loop ()
 
     loop ()

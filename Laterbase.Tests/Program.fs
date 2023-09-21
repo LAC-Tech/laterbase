@@ -102,25 +102,60 @@ let rec sendToNetwork network msgs =
         let replica = {Db = db; Addr = msg.Dest}
         sendToNetwork network (recv replica msg.Payload)
 
+let sendBetween = 
+    List.map (fun r -> r.Addr, r.Db) >> Map.ofList >> sendToNetwork
+
 test 
     "two databases will have the same events if they sync with each other"
-    (fun 
-        ((addr1, events1) : (Address * (Event.ID * bool) list))
-        ((addr2, events2) : (Address * (Event.ID * bool) list)) ->
+    (fun
+        ((addr1, addr2) : (Address * Address))
+        (events1 : (Event.ID * int) list)
+        (events2 : (Event.ID * int) list) ->
 
         let r1 = {Db = Database(); Addr = addr1}
         let r2 = {Db = Database(); Addr = addr2}
 
-        // Simulating a network
-        let network = Map.ofList [r1.Addr, r1.Db; r2.Addr, r2.Db]
-        let send = sendToNetwork network
+        let send = sendBetween [r1; r2]
 
         // Populate the two databases with separate events
         r1.Db.WriteEvents(None, events1)
         r2.Db.WriteEvents(None, events2)
 
+        // Bi-directional sync
         recv r1 (Sync r2.Addr) |> send
         recv r2 (Sync r1.Addr) |> send
 
         converged r1.Db r2.Db
+    )
+
+test
+    "syncing is commutative"
+    (fun
+        ((addrA1, addrB1, addrA2, addrB2) : 
+            (Address * Address * Address * Address))
+        (eventsA : (Event.ID * int) list)
+        (eventsB : (Event.ID * int) list) ->
+            
+        let rA1 = {Db = Database(); Addr = addrA1}
+        let rB1 = {Db = Database(); Addr = addrB1}
+
+        let rA2 = {Db = Database(); Addr = addrA2}
+        let rB2 = {Db = Database(); Addr = addrB2}
+
+        // A replicas have same events
+        rA1.Db.WriteEvents(None, eventsA)
+        rA2.Db.WriteEvents(None, eventsA)
+
+        // B replicas have same events
+        rB1.Db.WriteEvents(None, eventsB)
+        rB2.Db.WriteEvents(None, eventsB)
+
+        let send1 = sendBetween [rA1; rB1]
+        let send2 = sendBetween [rA2; rB2]
+
+        // Sync 1 & 2 in different order; a . b = b . a
+        recv rA1 (Sync rB1.Addr) |> send1
+        recv rB2 (Sync rA2.Addr) |> send2
+
+        converged rB1.Db rA2.Db
     )
