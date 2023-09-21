@@ -1,5 +1,7 @@
 ﻿open System
 
+open Laterbase.Core
+
 open Terminal.Gui
 
 let speedMenu = 
@@ -44,28 +46,33 @@ type ExampleWindow() =
             | _ -> ()
         )
 
-let updateGui count =
-    map.Title <- $"Count: {count}"
-    map.SetNeedsDisplay()
-
 let mainLoop () =
     Application.Init()
     let runState = ref (Application.Begin (new ExampleWindow()))
-    //Application.RunLoop(runState)
     
     let firstIteration = ref true
     runState.Value.Toplevel.Running <- true
 
+    let mutable counter = 0L<Time.ms>
+
     let rec loop () =
-        let breakLoop =
+        let breakUiLoop =
             (not runState.Value.Toplevel.Running) ||
             (Application.ExitRunLoopAfterFirstIteration &&
             not firstIteration.Value)
 
-        if breakLoop then
+        if breakUiLoop then
             ()
         else 
-            Application.RunMainLoopIteration(runState, true, firstIteration)
+            Application.RunMainLoopIteration(runState, false, firstIteration)
+
+            let dateTime = 
+                DateTimeOffset.FromUnixTimeMilliseconds(int64 counter).DateTime
+
+
+            map.Title <- dateTime.ToString()
+            map.SetNeedsDisplay()
+            counter <- counter + 10L<Time.ms>
             loop ()
 
     loop ()
@@ -73,18 +80,7 @@ let mainLoop () =
         
 [<EntryPoint>]
 let main _ =
-    let mutable counter = 0
-    let timer = new Timers.Timer(TimeSpan.FromSeconds 1)
-    timer.Elapsed.Add(fun _ ->
-        counter <- counter + 1
-
-        Application.MainLoop.Invoke(fun _ -> 
-            map.Title <- $"Count: {counter}";
-            map.SetNeedsDisplay() |> ignore
-        )
-    )
-
-    timer.Start()
+    
 
     mainLoop ()
 
