@@ -96,11 +96,10 @@ test
         |> Seq.forall id
     )
 
-let rec sendToNetwork network msgs = 
-    for msg in msgs do
-        let db = network |> Map.find msg.Dest
-        let replica = {Db = db; Addr = msg.Dest}
-        sendToNetwork network (send replica msg.Payload)
+let rec sendToNetwork network msg = 
+    let db = network |> Map.find msg.Dest
+    let replica = {Db = db; Addr = msg.Dest}
+    send (sendToNetwork network) replica msg.Payload
 
 let acrossNetwork = 
     List.map (fun r -> r.Addr, r.Db) >> Map.ofList >> sendToNetwork
@@ -120,8 +119,8 @@ test
         r2.Db.WriteEvents(None, events2)
 
         // Bi-directional sync
-        send r1 (Sync r2.Addr) |> acrossNetwork [r1; r2]
-        send r2 (Sync r1.Addr) |> acrossNetwork [r1; r2]
+        send (acrossNetwork [r1; r2]) r1 (Sync r2.Addr)
+        send (acrossNetwork [r1; r2]) r2 (Sync r1.Addr)
 
         converged r1.Db r2.Db
     )
@@ -158,8 +157,8 @@ test
         rB2.Db.WriteEvents(None, eventsB)
 
         // Sync 1 & 2 in different order; a . b = b . a
-        send rB1 (Sync rA1.Addr) |> acrossNetwork [rA1; rB1]
-        send rA2 (Sync rB2.Addr) |> acrossNetwork [rA2; rB2]
+        send (acrossNetwork [rA1; rB1]) rB1 (Sync rA1.Addr)
+        send (acrossNetwork [rA2; rB2]) rA2 (Sync rB2.Addr)
 
         converged rA1.Db rB2.Db
     )
@@ -176,7 +175,7 @@ test
         replica.Db.WriteEvents(None, events)
         controlDb.WriteEvents(None, events)
 
-        send replica (Sync replica.Addr) |> acrossNetwork [replica]
+        send (acrossNetwork [replica]) replica (Sync replica.Addr)
 
         converged replica.Db controlDb
     )
@@ -214,12 +213,12 @@ test
         let acrossNetwork2 = acrossNetwork [rA2; rB2; rC2]
 
         // (a . b) . c
-        send rB1 (Sync rA1.Addr) |> acrossNetwork1 
-        send rA1 (Sync rC1.Addr) |> acrossNetwork1
+        send acrossNetwork1 rB1 (Sync rA1.Addr)
+        send acrossNetwork1 rA1 (Sync rC1.Addr)
 
         // a . (b . c)
-        send rC2 (Sync rB2.Addr) |> acrossNetwork2
-        send rB2 (Sync rA2.Addr) |> acrossNetwork2
+        send acrossNetwork2 rC2 (Sync rB2.Addr) 
+        send acrossNetwork2 rB2 (Sync rA2.Addr)
 
         converged rC1.Db rA2.Db
         

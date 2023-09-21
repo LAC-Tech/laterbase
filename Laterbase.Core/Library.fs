@@ -162,11 +162,11 @@ type Replica<'id, 'e> = {Addr: Address; Db: Database<'id, 'e>}
 type Sender<'id, 'e> = Address -> Message<'id, 'e> -> unit
 
 /// Modifies the database based on msg, then returns response messages to send
-let send<'id, 'e> (src: Replica<'id, 'e>) = function
+let send<'id, 'e> 
+    (sendAcrossNetwork: Message<'id, 'e> -> unit) 
+    (src: Replica<'id, 'e>) = function
     | Sync destAddr ->
         let (events, lc) = src.Db.ReadEvents destAddr
         let payload = StoreEvents (Some (src.Addr, lc), List.ofSeq events)
-        seq { {Dest = destAddr; Payload = payload } }
-    | StoreEvents (from, events) -> 
-        src.Db.WriteEvents(from, events)
-        Seq.empty
+        sendAcrossNetwork {Dest = destAddr; Payload = payload }
+    | StoreEvents (from, events) -> src.Db.WriteEvents(from, events)
