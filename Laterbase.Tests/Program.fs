@@ -13,20 +13,20 @@ let genLogicalClock = Arb.generate<uint32<events>>
 let genEventID =
     Gen.map2 
         (fun ts bytes -> Event.newId ts bytes)
-
-        (Arb.generate<int64<Time.ms>> |> Gen.map abs)
+        (Arb.generate<int64<valid ms>> |> Gen.map abs)
         (Arb.generate<byte> |> Gen.arrayOfLength 10)
 
-let genStorage<'a> = Arb.generate<unit> |> Gen.map (fun _ -> Storage<'a, 'a>())
+let genStorage<'k, 'v> = 
+    Arb.generate<unit> |> Gen.map (fun _ -> Storage<'k, 'v>())
 
-let genDb<'id, 'e> = 
-    Arb.generate<unit> |> Gen.map (fun _ -> Database<'id, 'e>())
+let genDb<'e> = 
+    Arb.generate<unit> |> Gen.map (fun _ -> Database<'e>())
 
 let genAddr = gen16Bytes |> Gen.map Address
 
-let genReplica<'id, 'e> = 
+let genReplica<'e> = 
     Gen.map2
-        (fun (db: Database<'id, 'e>) addr -> {Db = db; Addr = addr})
+        (fun (db: Database<'e>) addr -> {Db = db; Addr = addr})
         genDb
         genAddr
 
@@ -36,13 +36,13 @@ type MyGenerators =
             override _.Generator = genEventID                            
             override _.Shrinker _ = Seq.empty}
 
-    static member Storage<'a>() =
-        {new Arbitrary<Storage<'a, 'a>>() with
+    static member Storage<'k, 'v>() =
+        {new Arbitrary<Storage<'k, 'v>>() with
             override _.Generator = genStorage
             override _.Shrinker _ = Seq.empty}
 
-    static member Database<'id, 'e>() =
-        {new Arbitrary<Database<'id, 'e>>() with
+    static member Database<'e>() =
+        {new Arbitrary<Database<'e>>() with
             override _.Generator = genDb
             override _.Shrinker _ = Seq.empty}
 
@@ -51,8 +51,8 @@ type MyGenerators =
             override _.Generator = genAddr
             override _.Shrinker _ = Seq.empty}
 
-    static member Replica<'id, 'e>() =
-        {new Arbitrary<Replica<'id, 'e>>() with
+    static member Replica<'e>() =
+        {new Arbitrary<Replica<'e>>() with
             override _.Generator = genReplica
             override _.Shrinker _ = Seq.empty}
 

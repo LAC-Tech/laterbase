@@ -15,20 +15,19 @@ let dictGet k (dict: IDictionary<'k, 'v>) = dict.TryGetValue k |> Option.ofTry
 let dictGetOrDefault k defaultValue (dict: IDictionary<'k, 'v>)  = 
     dictGet k dict |> Option.defaultValue defaultValue
 
-/// Wrappers purely so one isn't passed in when the other is expected
-module Time =
-    /// When a replica recorded an event
-    type Transaction<'t> = Transaction of 't
-    /// When an event happened in the domain
-    type Valid<'t> = Valid of 't
+/// When a replica recorded an event
+[<Measure>] type transaction
 
-    [<Measure>] type ms
-    [<Measure>] type s
-    [<Measure>] type m
-    [<Measure>] type h
-    let msPerS: int64<ms/s> = 1000L<ms/s>
-    let sPerM: int64<s/m> = 60L<s/m>
-    let mPerH: int64<m/h> = 60L<m/h>
+/// When an event happened in the domain
+[<Measure>] type valid
+
+[<Measure>] type ms
+[<Measure>] type s
+[<Measure>] type m
+[<Measure>] type h
+let msPerS: int64<ms/s> = 1000L<ms/s>
+let sPerM: int64<s/m> = 60L<s/m>
+let mPerH: int64<m/h> = 60L<m/h>
 
 [<Measure>] type events
 [<Measure>] type received
@@ -38,33 +37,37 @@ module Event =
     /// IDs must be globally unique and orderable. They should contain within
     /// them the physical valid time. This is so clients can generate their own
     /// IDs.
-    /// TODO: make sure the physical time is not greater than current time.
+    /// Valid time is used so:
+    /// - replicas can create their own IDs
+    /// - we can backdate
+    /// TODO: make sure the timestamp is not greater than current time.
     type ID = Ulid
 
-    let newId (timestamp: int64<Time.ms>) (randomness: byte array) =
+    let newId (timestamp: int64<valid ms>) (randomness: byte array) =
         Ulid(int64 timestamp, randomness)
 
 [<IsReadOnly; Struct>]
 type Address(id: byte array) =
     member _.Id = id
+    // Hex string for compactness
     override this.ToString() = 
         this.Id
         |> Array.map (fun b -> b.ToString("X2"))
         |> String.concat ""
 
 [<Struct; IsReadOnly>]
-type MessagePayload<'k, 'v> =
+type MessagePayload<'e> =
     | Sync of Address
     | StoreEvents of 
         from: (Address * uint64<received events>) option *
-        events:  ('k * 'v) list
+        events:  (Event.ID * 'e) list
     //| StoreEventsAck of uint64<sent events>
 
 // All of the messages must be idempotent
 [<Struct; IsReadOnly>] 
-type Message<'k, 'v> = {
+type Message<'e> = {
     Dest: Address;
-    Payload: MessagePayload<'k, 'v>
+    Payload: MessagePayload<'e>
 }
 
 type Storage<'k, 'v>() =
@@ -134,8 +137,8 @@ type LogicalClock() =
         ] |> String.concat "\n"
     
 /// At this point we know nothing about the address, it's just an ID
-type Database<'id, 'e>() =
-    member val internal Storage = Storage<'id, 'e>()
+type Database<'e>() =
+    member val internal Storage = Storage<Event.ID, 'e>()
     member val internal LogicalClock = LogicalClock()
 
     /// Returns new events from the perspective of the destAddr
@@ -153,20 +156,21 @@ type Database<'id, 'e>() =
     override self.ToString() = 
         $"Database\n{self.Storage}\n{self.LogicalClock}"
 
-let converged (db1: Database<'id, 'e>) (db2: Database<'id, 'e>) =
+let converged (db1: Database<'e>) (db2: Database<'e>) =
     let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)
     es1.SequenceEqual(es2)
 
-type Replica<'id, 'e> = {Addr: Address; Db: Database<'id, 'e>}
+type Replica<'e> = {Addr: Address; Db: Database<'e>}
 
-type Sender<'id, 'e> = Address -> Message<'id, 'e> -> unit
+type Sender<'e> = Address -> Message<'e> -> unit
 
 /// Modifies the database based on msg, then returns response messages to send
-let send<'id, 'e> 
-    (sendAcrossNetwork: Message<'id, 'e> -> unit) 
-    (src: Replica<'id, 'e>) = function
+let send<'e> 
+    (sendAcrossNetwork: Message<'e> -> unit) 
+    (src: Replica<'e>) = function
     | Sync destAddr ->
         let (events, lc) = src.Db.ReadEvents destAddr
         let payload = StoreEvents (Some (src.Addr, lc), List.ofSeq events)
         sendAcrossNetwork {Dest = destAddr; Payload = payload }
     | StoreEvents (from, events) -> src.Db.WriteEvents(from, events)
+
