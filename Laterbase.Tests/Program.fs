@@ -77,6 +77,7 @@ test
 
                 let outputEvents = outputEvents |> List.ofSeq
 
+
                 // Storage will not store duplicates
                 let inputEvents = 
                     inputEvents |> List.distinctBy (fun (k, _) -> k) 
@@ -218,3 +219,4 @@ test
         converged rC1.Db rA2.Db
         
     )
++

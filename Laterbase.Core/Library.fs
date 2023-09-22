@@ -93,6 +93,25 @@ type LogicalClock() =
     member self.AddSent(addr: Address, counter: uint64<sent events>) =
         self.Sent[addr] <- counter
 
+    member self.Inspect() =
+        let dt = new Data.DataTable()
+        dt.Columns.Add "Address" |> ignore
+        dt.Columns.Add "Sent" |> ignore
+        dt.Columns.Add "Received" |> ignore
+
+        let joined = self.Sent.Join(
+            self.Received, 
+            (fun kvp -> kvp.Key),
+            (fun kvp -> kvp.Key),
+            (fun sent received -> KeyValuePair(sent.Key, (sent.Value, received.Value))))
+
+        for kvp in joined do
+            let (sent, received) = kvp.Value
+            dt.Rows.Add(kvp.Key, sent, received) |> ignore
+
+        dt
+
+
     override self.ToString() =
         // Parker 1983 syntax
         let stringify (dict: IDictionary<_, _>) =
@@ -150,6 +169,8 @@ type Storage<'k, 'v>() =
 
 type DatabaseViewData = {
     Events: Data.DataTable
+    AppendLog: System.Collections.IList
+    LogicalClock: Data.DataTable
 }
     
 /// At this point we know nothing about the address, it's just an ID
@@ -174,13 +195,19 @@ type Database<'e>() =
 
     member self.Inspect() =
         let eventsDt = new Data.DataTable()
-        eventsDt.Columns.Add "Event ID" |> ignore
-        eventsDt.Columns.Add "Event Value" |> ignore
+        eventsDt.Columns.Add "ID" |> ignore
+        eventsDt.Columns.Add "Value" |> ignore
 
         for e in self.Storage.Events do
-            eventsDt.Rows.Add(e.Key.ToString(), e.Value.ToString()) |> ignore
+            eventsDt.Rows.Add(e.Key.ToString(), e.Value.ToString()) |> ignore 
 
-        {Events = eventsDt }
+
+
+        {
+            Events = eventsDt; 
+            AppendLog = self.Storage.AppendLog;
+            LogicalClock = self.LogicalClock.Inspect()
+        }
 
     override self.ToString() = 
         $"Database\n{self.Storage}\n{self.LogicalClock}"

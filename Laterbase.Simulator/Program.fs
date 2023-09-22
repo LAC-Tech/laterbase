@@ -76,9 +76,9 @@ let mainLoop () =
 
     loop ()
 
-type DBExplorer(db: Database<'e>) =
-    inherit FrameView(
-        "Laterbase Explorer",
+type DBInspector(db: Database<'e>) =
+    inherit Window(
+        "Laterbase Inspector",
         X = 0,
         Y = 0,
         Width = Dim.Fill(),
@@ -86,16 +86,46 @@ type DBExplorer(db: Database<'e>) =
     )
 
     do 
-        let tableView = new TableView(
+        let viewData = db.Inspect()
+
+        let tabs = new TabView(
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
             Height = Dim.Fill()
         )
 
-        tableView.Table <- db.Inspect().Events
+        let eventsView = new TableView(
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+            Table = viewData.Events
+        )
 
-        base.Add tableView
+        let appendLogView = new ListView(
+            viewData.AppendLog,
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill()
+        )
+
+        let logicalClockView = new TableView(
+            viewData.LogicalClock,
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill()
+        )
+
+        tabs.AddTab(TabView.Tab("Events", eventsView), true)
+        tabs.AddTab(TabView.Tab("Append Log", appendLogView), false)
+        tabs.AddTab(TabView.Tab("Logical Clock", logicalClockView), false)
+
+        base.Add tabs
+
+
 
         
 [<EntryPoint>]
@@ -113,11 +143,11 @@ let main _ =
         | Key.Esc -> Application.RequestStop ()
         | _ -> ()
     )
-    Application.Top.Add (new DBExplorer(db))
+    Application.Top.Add (new DBInspector(db))
     Application.Run()
     Application.Shutdown()
 
-    //mainLoop ()
+    //mainLoop () b
     //Application.Shutdown()
 
 
