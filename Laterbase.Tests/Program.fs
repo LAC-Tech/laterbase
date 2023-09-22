@@ -19,8 +19,8 @@ let genEventID =
 let genStorage<'k, 'v> = 
     Arb.generate<unit> |> Gen.map (fun _ -> Storage<'k, 'v>())
 
-let genDb<'e> = 
-    Arb.generate<unit> |> Gen.map (fun _ -> Database<'e>())
+let genDb<'e> =
+    Arb.generate<unit> |> Gen.map (fun _ -> LocalDatabase<'e>())-
 
 let genAddr = gen16Bytes |> Gen.map Address
 
@@ -41,8 +41,8 @@ type MyGenerators =
             override _.Generator = genStorage
             override _.Shrinker _ = Seq.empty}
 
-    static member Database<'e>() =
-        {new Arbitrary<Database<'e>>() with
+    static member LocalDatabase<'e>() =
+        {new Arbitrary<LocalDatabase<'e>>() with
             override _.Generator = genDb
             override _.Shrinker _ = Seq.empty}
 

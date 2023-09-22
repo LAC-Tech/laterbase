@@ -49,6 +49,8 @@ module Event =
     let newId (timestamp: int64<valid ms>) (randomness: byte array) =
         Ulid(int64 timestamp, randomness)
 
+    type Stream<'e> = (ID * 'e) seq
+
 [<IsReadOnly; Struct>]
 type Address(id: byte array) =
     member _.Id = id
@@ -93,24 +95,18 @@ type LogicalClock() =
     member self.AddSent(addr: Address, counter: uint64<sent events>) =
         self.Sent[addr] <- counter
 
-    member self.Inspect() =
+    member self.View() =
         let dt = new Data.DataTable()
         dt.Columns.Add "Address" |> ignore
         dt.Columns.Add "Sent" |> ignore
         dt.Columns.Add "Received" |> ignore
 
-        let joined = self.Sent.Join(
+        self.Sent.Join(
             self.Received, 
             (fun kvp -> kvp.Key),
             (fun kvp -> kvp.Key),
-            (fun sent received -> KeyValuePair(sent.Key, (sent.Value, received.Value))))
-
-        for kvp in joined do
-            let (sent, received) = kvp.Value
-            dt.Rows.Add(kvp.Key, sent, received) |> ignore
-
-        dt
-
+            (fun sent received -> 
+                (sent.Key, sent.Value, received.Value)))
 
     override self.ToString() =
         // Parker 1983 syntax
@@ -167,65 +163,64 @@ type Storage<'k, 'v>() =
 
         $"└ events = [{es}]\n└ log = [{appendLogStr}]"
 
-type DatabaseViewData = {
-    Events: Data.DataTable
-    AppendLog: System.Collections.IList
-    LogicalClock: Data.DataTable
+type DatabaseViewData<'e> = {
+    Events: Event.Stream<'e>
+    AppendLog: Event.ID seq
+    LogicalClock: (Address * uint64<events sent> * uint64<events received>) seq
 }
-    
-/// At this point we know nothing about the address, it's just an ID
-type Database<'e>() =
-    member val internal Storage = Storage<Event.ID, 'e>()
-    member val internal LogicalClock = LogicalClock()
 
+type IDatabase<'e> =
     /// Returns new events from the perspective of the destAddr
-    member self.ReadEvents (destAddr: Address) =
-        let since = self.LogicalClock.EventsSentFrom destAddr
-        let (events, totalNumEvents) = self.Storage.ReadEvents (uint64 since)
-        let totalNumEvents = totalNumEvents * 1uL<received events>
-        (events, totalNumEvents)
+    abstract member ReadEvents: 
+        destAddr: Address -> Event.Stream<'e> * uint64<events received>
 
-    member self.WriteEvents(from, newEvents) =
-        // If it came from another replica, update version vec to reflect this
-        from |> Option.iter self.LogicalClock.AddReceived
-        self.Storage.WriteEvents newEvents
+    abstract member WriteEvents:
+        from: (Address * uint64<events received>) option * newEvents: Event.Stream<'e> ->
+        unit
 
-        if not (self.Storage.Consistent()) then
-            raise (ConstraintViolation ("Storage is inconsistent", self))
+type LocalDatabase<'e>() =
+    member val private Storage = Storage<Event.ID, 'e>()
+    member val private LogicalClock = LogicalClock()
 
-    member self.Inspect() =
-        let eventsDt = new Data.DataTable()
-        eventsDt.Columns.Add "ID" |> ignore
-        eventsDt.Columns.Add "Value" |> ignore
+    interface IDatabase<'e> with    
+        member self.ReadEvents (destAddr: Address) =
+            let since = self.LogicalClock.EventsSentFrom destAddr
+            let (events, totalNumEvents) = self.Storage.ReadEvents (uint64 since)
+            let totalNumEvents = totalNumEvents * 1uL<received events>
+            (events, totalNumEvents)
 
-        for e in self.Storage.Events do
-            eventsDt.Rows.Add(e.Key.ToString(), e.Value.ToString()) |> ignore 
+        member self.WriteEvents(from, newEvents) =
+            // If from another replica, update logical clock to reflect this
+            from |> Option.iter self.LogicalClock.AddReceived
+            self.Storage.WriteEvents newEvents
 
+            if not (self.Storage.Consistent()) then
+                raise (ConstraintViolation ("Storage is inconsistent", self))
 
-
+    member self.View() =
         {
-            Events = eventsDt; 
-            AppendLog = self.Storage.AppendLog;
-            LogicalClock = self.LogicalClock.Inspect()
+            Events = 
+                self.Storage.Events  |>Seq.map (fun kvp -> kvp.Key, kvp.Value)
+            AppendLog = self.Storage.AppendLog
+            LogicalClock = self.LogicalClock.View()
         }
 
     override self.ToString() = 
         $"Database\n{self.Storage}\n{self.LogicalClock}"
 
-
-
-let converged (db1: Database<'e>) (db2: Database<'e>) =
-    let (es1, es2) = (db1.Storage.Events, db2.Storage.Events)
+/// TODO: this belongs in test
+let converged<'e> (db1: LocalDatabase<'e>) (db2: LocalDatabase<'e>) =
+    let (es1, es2) = (db1.View().Events, db2.View().Events)
     es1.SequenceEqual(es2)
 
-type Replica<'e> = {Addr: Address; Db: Database<'e>}
+type Replica<'e, 'db when 'db :> IDatabase<'e>> = { Addr: Address; Db: 'db }
 
 type Sender<'e> = Address -> Message<'e> -> unit
 
 /// Modifies the database based on msg, then returns response messages to send
 let send<'e> 
     (sendAcrossNetwork: Message<'e> -> unit) 
-    (src: Replica<'e>) = function
+    (src: Replica<'e, IDatabase<'e>>) = function
     | Sync destAddr ->
         let (events, lc) = src.Db.ReadEvents destAddr
         let payload = StoreEvents (Some (src.Addr, lc), List.ofSeq events)

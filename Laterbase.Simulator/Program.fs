@@ -76,7 +76,7 @@ let mainLoop () =
 
     loop ()
 
-type DBInspector(db: Database<'e>) =
+type DBInspector(db: LocalDatabase<'e>) =
     inherit Window(
         "Laterbase Inspector",
         X = 0,
@@ -86,7 +86,7 @@ type DBInspector(db: Database<'e>) =
     )
 
     do 
-        let viewData = db.Inspect()
+        let viewData = db.View()
 
         let tabs = new TabView(
             X = 0,
@@ -95,24 +95,39 @@ type DBInspector(db: Database<'e>) =
             Height = Dim.Fill()
         )
 
+        let eventsDt = new Data.DataTable()
+        eventsDt.Columns.Add "ID" |> ignore
+        eventsDt.Columns.Add "Value" |> ignore
+
+        for (k, v) in viewData.Events do
+            eventsDt.Rows.Add(k, v) |> ignore
+
         let eventsView = new TableView(
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
             Height = Dim.Fill(),
-            Table = viewData.Events
+            Table = eventsDt
         )
 
         let appendLogView = new ListView(
-            viewData.AppendLog,
+            viewData.AppendLog |> Seq.toArray,
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
             Height = Dim.Fill()
         )
 
+        let logicalClockDt = new Data.DataTable()
+        logicalClockDt.Columns.Add "Address" |> ignore
+        logicalClockDt.Columns.Add "Sent" |> ignore
+        logicalClockDt.Columns.Add "Received" |> ignore
+        for (addr, sent, received) in viewData.LogicalClock do
+            logicalClockDt.Rows.Add(addr, sent, received) |> ignore
+
+
         let logicalClockView = new TableView(
-            viewData.LogicalClock,
+            logicalClockDt,
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
@@ -120,8 +135,8 @@ type DBInspector(db: Database<'e>) =
         )
 
         tabs.AddTab(TabView.Tab("Events", eventsView), true)
-        tabs.AddTab(TabView.Tab("Append Log", appendLogView), false)
-        tabs.AddTab(TabView.Tab("Logical Clock", logicalClockView), false)
+        tabs.AddTab(TabView.Tab("AppendLog", appendLogView), false)
+        tabs.AddTab(TabView.Tab("LogicalClock", logicalClockView), false)
 
         base.Add tabs
 
@@ -130,9 +145,9 @@ type DBInspector(db: Database<'e>) =
         
 [<EntryPoint>]
 let main _ =
-    let db = Database()
+    let db = LocalDatabase<string>()
 
-    db.WriteEvents(None, [
+    (db :> IDatabase<_>).WriteEvents(None, [
         Event.ID.Generate(), "Monday"; 
         Event.ID.Generate(), "Tuesday"
     ])
