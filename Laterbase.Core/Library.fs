@@ -126,9 +126,7 @@ type Database<'e>() =
     member val internal AppendLog = ResizeArray<Event.ID>()
     member val internal LogicalClock = LogicalClock()
 
-    member self.ReadEvents (destAddr: Address) =
-        let since = self.LogicalClock.EventsSentFrom destAddr
-        
+    member self.ReadEvents (since: uint64<sent events>) =
         let kvPair eventId =
             dictGet eventId self.Events  
             |> Option.map (fun v -> (eventId, v))
@@ -141,6 +139,10 @@ type Database<'e>() =
             Checked.uint64 self.AppendLog.Count * 1uL<received events>
 
         (events, totalNumEvents)
+
+    member self.ReadEventsNotSeenBy(destAddr) = 
+        let since = self.LogicalClock.EventsSentFrom destAddr
+        self.ReadEvents since
 
     member self.WriteEvents(from, newEvents) =
         // If from another replica, update logical clock to reflect this
@@ -166,39 +168,35 @@ type Database<'e>() =
 
 module Replica =
     /// For local databases - can see implementation details
-    type Debug = {
+    type DebugView = {
         AppendLog: Event.ID seq
         LogicalClock: 
             (Address * uint64<events sent> * uint64<events received>) seq
     }
 
-    type View<'e> = {
-        Events: Event.Stream<'e>
-        Internal: Debug option
-    }
-
 type IReplica<'e> =
-    /// Returns new events from the perspective of the destAddr
-    abstract member Query: unit -> Replica.View<'e>
+    abstract member Address: Address
+    abstract member Query: since: uint64<sent events> -> Event.Stream<'e>
+    abstract member QueryDebug: unit -> Replica.DebugView option
     abstract member Send: Message<'e> -> unit
 
 type LocalReplica<'e>(address, sendMsg) =
     let db = Database<'e>()
-
+    
     interface IReplica<'e> with 
-        member _.Query() = {
-            Events = 
-                db.Events |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
-            Internal = Some {
-                AppendLog = db.AppendLog
-                LogicalClock = db.LogicalClock.View()
-            }
+        member val Address = address
+        member _.Query(since: uint64<sent events>) = 
+            db.ReadEvents(since) |> fst 
+
+        member _.QueryDebug() = Some {
+            AppendLog = db.AppendLog
+            LogicalClock = db.LogicalClock.View()
         }
 
         member _.Send (msg: Message<'e>) =
             match msg with        
             | Sync destAddr ->
-                let (events, lc) = db.ReadEvents destAddr
+                let (events, lc) = db.ReadEventsNotSeenBy destAddr
                 StoreEvents (Some (address, lc), List.ofSeq events)
                 |> sendMsg destAddr
             | StoreEvents (from, events) -> db.WriteEvents(from, events)
