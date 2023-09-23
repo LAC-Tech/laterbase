@@ -66,10 +66,9 @@ test
         |> Seq.forall id
     )
 
-let sendToReplicas<'e> (network: ResizeArray<IReplica<'e>>) =
-    fun addr msg ->
-        let r = network.Find(fun r -> r.Address = addr)
-        r.Send msg
+let sendToReplicas<'e> (network: ResizeArray<IReplica<'e>>) addr =
+    let r = network.Find(fun r -> r.Address = addr)
+    r.Send
 
 test 
     "two databases will have the same events if they sync with each other"

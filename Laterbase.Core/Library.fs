@@ -11,9 +11,16 @@ open NetUlid
 module Option =
     let ofTry (found, value) = if found then Some value else None
 
-let dictGet k (dict: IDictionary<'k, 'v>) = dict.TryGetValue k |> Option.ofTry
-let dictGetOrDefault k defaultValue (dict: IDictionary<'k, 'v>)  = 
-    dictGet k dict |> Option.defaultValue defaultValue
+let inline flip f y x = f x y
+
+module Dict =
+    let get k (dict: SortedDictionary<'k, 'v>) = 
+        dict.TryGetValue k |> Option.ofTry
+    
+    let getOrDefault k defaultValue (dict: SortedDictionary<'k, 'v>)  = 
+        get k dict |> Option.defaultValue defaultValue
+    
+    let getKeyValue k dict = get k dict |> Option.map (fun v -> (k, v)) 
 
 type ConstraintViolation<'a> (reason: string, thing: 'a) =
     inherit System.Exception (reason) 
@@ -80,10 +87,10 @@ type LogicalClock() =
         SortedDictionary<Address, uint64<received events>>()  
 
     member self.EventsReceivedFrom addr = 
-        dictGetOrDefault addr 0UL<received events> self.Received
+        Dict.getOrDefault addr 0UL<received events> self.Received
     
     member self.EventsSentFrom addr = 
-        dictGetOrDefault addr 0UL<sent events> self.Sent
+        Dict.getOrDefault addr 0UL<sent events> self.Sent
 
     member self.AddReceived(addr: Address, counter: uint64<received events>) =
         self.Received[addr] <- counter
@@ -126,23 +133,16 @@ type Database<'e>() =
     member val internal AppendLog = ResizeArray<Event.ID>()
     member val internal LogicalClock = LogicalClock()
 
-    member self.ReadEvents (since: uint64<sent events>) =
-        let kvPair eventId =
-            dictGet eventId self.Events  
-            |> Option.map (fun v -> (eventId, v))
+    member self.ReadEventCount() =
+        Checked.uint64 self.AppendLog.Count * 1uL<received events>
 
-        let events =
-            Seq.skip (Checked.int since - 1) self.AppendLog
-            |> Seq.choose kvPair
-        
-        let totalNumEvents = 
-            Checked.uint64 self.AppendLog.Count * 1uL<received events>
+    member self.ReadEventsInTxnOrder (since: uint64<sent events>) =
+        self.AppendLog 
+        |> Seq.skip (Checked.int since - 1) 
+        |> Seq.choose (flip Dict.getKeyValue self.Events)
 
-        (events, totalNumEvents)
-
-    member self.ReadEventsNotSeenBy(destAddr) = 
-        let since = self.LogicalClock.EventsSentFrom destAddr
-        self.ReadEvents since
+    member self.ReadEventCountFrom(destAddr) = 
+        self.LogicalClock.EventsSentFrom destAddr
 
     member self.WriteEvents(from, newEvents) =
         // If from another replica, update logical clock to reflect this
@@ -176,6 +176,8 @@ module Replica =
 
 type IReplica<'e> =
     abstract member Address: Address
+
+    /// Return events in transaction time order
     abstract member Query: since: uint64<sent events> -> Event.Stream<'e>
     abstract member QueryDebug: unit -> Replica.DebugView option
     abstract member Send: Message<'e> -> unit
@@ -196,7 +198,9 @@ type LocalReplica<'e>(address, sendMsg) =
         member _.Send (msg: Message<'e>) =
             match msg with        
             | Sync destAddr ->
-                let (events, lc) = db.ReadEventsNotSeenBy destAddr
+                let since = db.ReadEventCountFrom destAddr
+                let events = db.ReadEventsInTxnOrder since
+                let lc = db.ReadEventCount()
                 StoreEvents (Some (address, lc), List.ofSeq events)
                 |> sendMsg destAddr
             | StoreEvents (from, events) -> db.WriteEvents(from, events)
