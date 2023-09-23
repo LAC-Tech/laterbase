@@ -51,29 +51,25 @@ module Event =
 
     type Stream<'e> = (ID * 'e) seq
 
-[<IsReadOnly; Struct>]
+/// Address in an actor sense. Used for locating Replicas
+[<AbstractClass>]
 type Address(id: byte array) =
     member _.Id = id
+
+    abstract Send: Message<'e> -> unit
+
     // Hex string for compactness
     override this.ToString() = 
         this.Id
         |> Array.map (fun b -> b.ToString("X2"))
         |> String.concat ""
-
-[<Struct; IsReadOnly>]
-type MessagePayload<'e> =
+// All of the messages must be idempotent
+and [<Struct; IsReadOnly>] Message<'e> =
     | Sync of Address
     | StoreEvents of 
         from: (Address * uint64<received events>) option *
         events:  (Event.ID * 'e) list
     //| StoreEventsAck of uint64<sent events>
-
-// All of the messages must be idempotent
-[<Struct; IsReadOnly>] 
-type Message<'e> = {
-    Dest: Address;
-    Payload: MessagePayload<'e>
-}
 
 type LogicalClock() =
     // Double sided counter so we can just send single counters across the network
@@ -121,17 +117,18 @@ type LogicalClock() =
             $"└ received = {stringify self.Received}"
         ] |> String.concat "\n"
 
-type Storage<'k, 'v>() =
-    member val internal Events = SortedDictionary<'k, 'v>()
+type Database<'e>() =
+    member val internal Events = SortedDictionary<Event.ID, 'e>()
     (**
         This imposes a total order on a partial order.
-        IE events written to at the same time are concurrent.
         Should it be a jagged array with concurrent events stored together? 
     *)
-    member val internal AppendLog = ResizeArray<'k>()
+    member val internal AppendLog = ResizeArray<Event.ID>()
+    member val internal LogicalClock = LogicalClock()
 
-    /// Returns events in transaction order, ie the order they were written
-    member self.ReadEvents(since: uint64) =
+    member self.ReadEvents (destAddr: Address) =
+        let since = self.LogicalClock.EventsSentFrom destAddr
+        
         let kvPair eventId =
             dictGet eventId self.Events  
             |> Option.map (fun v -> (eventId, v))
@@ -140,17 +137,21 @@ type Storage<'k, 'v>() =
             Seq.skip (Checked.int since - 1) self.AppendLog
             |> Seq.choose kvPair
         
-        let totalNumEvents = Checked.uint64 self.AppendLog.Count
+        let totalNumEvents = 
+            Checked.uint64 self.AppendLog.Count * 1uL<received events>
+
         (events, totalNumEvents)
 
-    member self.WriteEvents newEvents =
+    member self.WriteEvents(from, newEvents) =
+        // If from another replica, update logical clock to reflect this
+        from |> Option.iter self.LogicalClock.AddReceived
+
         for (k, v) in newEvents do
             if self.Events.TryAdd(k, v) then
                 self.AppendLog.Add k
 
-    // Not sure if 'consistent' is the word here
-    member self.Consistent() =
-        self.Events.Count = self.AppendLog.Count
+        if not (self.Events.Count = self.AppendLog.Count) then
+            raise (ConstraintViolation ("Storage is inconsistent", self))
 
     override self.ToString() =
         let es = 
@@ -161,69 +162,43 @@ type Storage<'k, 'v>() =
             [for id in self.AppendLog -> $"{id}" ]
             |> String.concat "; "
 
-        $"└ events = [{es}]\n└ log = [{appendLogStr}]"
+        $"Database\n└ events = [{es}]\n└ log = [{appendLogStr}]\n{self.LogicalClock}"
 
-type DatabaseViewData<'e> = {
-    Events: Event.Stream<'e>
-    AppendLog: Event.ID seq
-    LogicalClock: (Address * uint64<events sent> * uint64<events received>) seq
-}
+module Replica =
+    /// For local databases - can see implementation details
+    type InternalView = {
+        AppendLog: Event.ID seq
+        LogicalClock: 
+            (Address * uint64<events sent> * uint64<events received>) seq
+    }
 
-type IDatabase<'e> =
+    type View<'e> = {
+        Events: Event.Stream<'e>
+        Internal: InternalView option
+    }
+
+type IReplica<'e> =
     /// Returns new events from the perspective of the destAddr
-    abstract member ReadEvents: 
-        destAddr: Address -> Event.Stream<'e> * uint64<events received>
+    abstract member Query: unit -> Replica.View<'e>
+    abstract member Send: Message<'e> -> unit
 
-    abstract member WriteEvents:
-        from: (Address * uint64<events received>) option * newEvents: Event.Stream<'e> ->
-        unit
+type LocalReplica<'e>(address) =
+    let db = Database<'e>()
 
-type LocalDatabase<'e>() =
-    member val private Storage = Storage<Event.ID, 'e>()
-    member val private LogicalClock = LogicalClock()
-
-    interface IDatabase<'e> with    
-        member self.ReadEvents (destAddr: Address) =
-            let since = self.LogicalClock.EventsSentFrom destAddr
-            let (events, totalNumEvents) = self.Storage.ReadEvents (uint64 since)
-            let totalNumEvents = totalNumEvents * 1uL<received events>
-            (events, totalNumEvents)
-
-        member self.WriteEvents(from, newEvents) =
-            // If from another replica, update logical clock to reflect this
-            from |> Option.iter self.LogicalClock.AddReceived
-            self.Storage.WriteEvents newEvents
-
-            if not (self.Storage.Consistent()) then
-                raise (ConstraintViolation ("Storage is inconsistent", self))
-
-    member self.View() =
-        {
+    interface IReplica<'e> with 
+        member _.Query() = {
             Events = 
-                self.Storage.Events  |>Seq.map (fun kvp -> kvp.Key, kvp.Value)
-            AppendLog = self.Storage.AppendLog
-            LogicalClock = self.LogicalClock.View()
+                db.Events |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
+            Internal = Some {
+                AppendLog = db.AppendLog
+                LogicalClock = db.LogicalClock.View()
+            }
         }
 
-    override self.ToString() = 
-        $"Database\n{self.Storage}\n{self.LogicalClock}"
-
-/// TODO: this belongs in test
-let converged<'e> (db1: LocalDatabase<'e>) (db2: LocalDatabase<'e>) =
-    let (es1, es2) = (db1.View().Events, db2.View().Events)
-    es1.SequenceEqual(es2)
-
-type Replica<'e, 'db when 'db :> IDatabase<'e>> = { Addr: Address; Db: 'db }
-
-type Sender<'e> = Address -> Message<'e> -> unit
-
-/// Modifies the database based on msg, then returns response messages to send
-let send<'e> 
-    (sendAcrossNetwork: Message<'e> -> unit) 
-    (src: Replica<'e, IDatabase<'e>>) = function
-    | Sync destAddr ->
-        let (events, lc) = src.Db.ReadEvents destAddr
-        let payload = StoreEvents (Some (src.Addr, lc), List.ofSeq events)
-        sendAcrossNetwork {Dest = destAddr; Payload = payload }
-    | StoreEvents (from, events) -> src.Db.WriteEvents(from, events)
-
+        member _.Send (msg: Message<'e>) =
+            match msg with        
+            | Sync destAddr ->
+                let (events, lc) = db.ReadEvents destAddr
+                StoreEvents (Some (address, lc), List.ofSeq events)
+                |> destAddr.Send
+            | StoreEvents (from, events) -> db.WriteEvents(from, events)

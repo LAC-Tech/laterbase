@@ -1,6 +1,7 @@
 ﻿open FsCheck
 open Laterbase.Core
 open System
+open System.Linq
 
 Console.Clear ()
 
@@ -20,13 +21,13 @@ let genStorage<'k, 'v> =
     Arb.generate<unit> |> Gen.map (fun _ -> Storage<'k, 'v>())
 
 let genDb<'e> =
-    Arb.generate<unit> |> Gen.map (fun _ -> LocalDatabase<'e>())-
+    Arb.generate<unit> |> Gen.map (fun _ -> LocalDatabase<'e>())
 
 let genAddr = gen16Bytes |> Gen.map Address
 
 let genReplica<'e> = 
     Gen.map2
-        (fun (db: Database<'e>) addr -> {Db = db; Addr = addr})
+        (fun (db: LocalDatabase<'e>) addr -> {Db = db; Addr = addr})
         genDb
         genAddr
 
@@ -52,7 +53,7 @@ type MyGenerators =
             override _.Shrinker _ = Seq.empty}
 
     static member Replica<'e>() =
-        {new Arbitrary<Replica<'e>>() with
+        {new Arbitrary<Replica<'e, LocalDatabase<'e>>>() with
             override _.Generator = genReplica
             override _.Shrinker _ = Seq.empty}
 
@@ -97,8 +98,16 @@ let rec sendToNetwork network msg =
     let replica = {Db = db; Addr = msg.Dest}
     send (sendToNetwork network) replica msg.Payload
 
+/// TODO: this belongs in test
+let converged<'e> (db1: LocalDatabase<'e>) (db2: LocalDatabase<'e>) =
+    let (es1, es2) = (db1.View().Events, db2.View().Events)
+    es1.SequenceEqual(es2)
+
 let acrossNetwork = 
     List.map (fun r -> r.Addr, r.Db) >> Map.ofList >> sendToNetwork
+
+let inline writeEvents (db: LocalDatabase<'e>) from newEvents = 
+    (db :> IDatabase<'e>).WriteEvents (from, newEvents)
 
 test 
     "two databases will have the same events if they sync with each other"
@@ -107,10 +116,13 @@ test
         (events1 : (Event.ID * int) list)
         (events2 : (Event.ID * int) list) ->
 
-        let r1 = {Db = Database(); Addr = addr1}
-        let r2 = {Db = Database(); Addr = addr2}
+        let r1 = {Db = LocalDatabase(); Addr = addr1}
+        let r2 = {Db = LocalDatabase(); Addr = addr2}
+
+
 
         // Populate the two databases with separate events
+        writeEvents r1.Db None events1
         r1.Db.WriteEvents(None, events1)
         r2.Db.WriteEvents(None, events2)
 
@@ -219,4 +231,3 @@ test
         converged rC1.Db rA2.Db
         
     )
-+
