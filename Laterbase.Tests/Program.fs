@@ -17,11 +17,8 @@ let genEventID =
         (Arb.generate<int64<valid ms>> |> Gen.map abs)
         (Arb.generate<byte> |> Gen.arrayOfLength 10)
 
-let genStorage<'k, 'v> = 
-    Arb.generate<unit> |> Gen.map (fun _ -> Storage<'k, 'v>())
-
 let genDb<'e> =
-    Arb.generate<unit> |> Gen.map (fun _ -> LocalDatabase<'e>())
+    Arb.generate<unit> |> Gen.map (fun _ -> Database<'e>())
 
 let genAddr = gen16Bytes |> Gen.map Address
 

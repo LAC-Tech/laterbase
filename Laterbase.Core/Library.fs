@@ -36,7 +36,7 @@ let mPerH: int64<m/h> = 60L<m/h>
 [<Measure>] type received
 [<Measure>] type sent
 
-module Event = 
+module Event =
     /// IDs must be globally unique and orderable. They should contain within
     /// them the physical valid time. This is so clients can generate their own
     /// IDs.
@@ -52,19 +52,19 @@ module Event =
     type Stream<'e> = (ID * 'e) seq
 
 /// Address in an actor sense. Used for locating Replicas
-[<AbstractClass>]
+/// Keeping it as a dumb data type so it's easy to send across a network
+[<Struct; IsReadOnly>]
 type Address(id: byte array) =
     member _.Id = id
-
-    abstract Send: Message<'e> -> unit
-
     // Hex string for compactness
     override this.ToString() = 
         this.Id
         |> Array.map (fun b -> b.ToString("X2"))
         |> String.concat ""
+
 // All of the messages must be idempotent
-and [<Struct; IsReadOnly>] Message<'e> =
+[<Struct; IsReadOnly>]
+type  Message<'e> =
     | Sync of Address
     | StoreEvents of 
         from: (Address * uint64<received events>) option *
@@ -166,7 +166,7 @@ type Database<'e>() =
 
 module Replica =
     /// For local databases - can see implementation details
-    type InternalView = {
+    type Debug = {
         AppendLog: Event.ID seq
         LogicalClock: 
             (Address * uint64<events sent> * uint64<events received>) seq
@@ -174,7 +174,7 @@ module Replica =
 
     type View<'e> = {
         Events: Event.Stream<'e>
-        Internal: InternalView option
+        Internal: Debug option
     }
 
 type IReplica<'e> =
@@ -182,7 +182,7 @@ type IReplica<'e> =
     abstract member Query: unit -> Replica.View<'e>
     abstract member Send: Message<'e> -> unit
 
-type LocalReplica<'e>(address) =
+type LocalReplica<'e>(address, sendMsg) =
     let db = Database<'e>()
 
     interface IReplica<'e> with 
@@ -200,5 +200,5 @@ type LocalReplica<'e>(address) =
             | Sync destAddr ->
                 let (events, lc) = db.ReadEvents destAddr
                 StoreEvents (Some (address, lc), List.ofSeq events)
-                |> destAddr.Send
+                |> sendMsg destAddr
             | StoreEvents (from, events) -> db.WriteEvents(from, events)
