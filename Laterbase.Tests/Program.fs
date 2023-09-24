@@ -1,7 +1,6 @@
 ﻿open FsCheck
 open Laterbase.Core
 open System
-open System.Linq
 
 Console.Clear ()
 
@@ -48,7 +47,7 @@ test
                 r.Send (StoreEvents (None, inputEvents))
 
                 let outputEvents = 
-                    r.Read({ByTime = Sort.Time.LogicalTxn; Limit = 0uy})
+                    r.Read({ByTime = LogicalTxn; Limit = 0uy})
 
                 let outputEvents = outputEvents |> List.ofSeq
 
@@ -57,12 +56,7 @@ test
                 let inputEvents = 
                     inputEvents |> List.distinctBy (fun (k, _) -> k) 
 
-                let result = inputEvents = outputEvents
-
-                if (not result) then
-                    eprintfn "ERROR: %A != %A" inputEvents outputEvents
-
-                result
+                inputEvents = outputEvents
         }
         |> Seq.forall id
     )
@@ -71,6 +65,31 @@ let sendToReplicas<'e> (network: ResizeArray<IReplica<'e>>) addr =
     let r = network.Find(fun r -> r.Address = addr)
     r.Send
 
+let testReplicas addrs =
+    let network = ResizeArray<IReplica<int>>()
+    let sendMsg = sendToReplicas network
+
+    let rs: IReplica<int> list = 
+        List.map (fun addr -> LocalReplica(addr, sendMsg)) addrs
+    network.AddRange(rs)
+    rs
+
+let oneTestReplica addr = testReplicas [addr] |> List.head
+
+let twoTestReplicas (addr1, addr2) =
+    let [r1; r2] = testReplicas [addr1; addr2]
+    (r1, r2)
+
+let threeTestReplicas (addr1, addr2, addr3) =
+    let [r1; r2; r3] = testReplicas [addr1; addr2; addr3]
+    (r1, r2, r3)
+
+let replicasConverged (r1: IReplica<'e>) (r2: IReplica<'e>) =
+    let query = {ByTime = PhysicalValid; Limit = 0uy}
+    let es1 = r1.Read(query)
+    let es2 = r2.Read(query)
+    Seq.equal es1 es2
+
 test 
     "two databases will have the same events if they sync with each other"
     (fun
@@ -78,12 +97,7 @@ test
         (events1 : (Event.ID * int) list)
         (events2 : (Event.ID * int) list) ->
     
-        let network = ResizeArray<IReplica<int>>()
-        let sendMsg = sendToReplicas network 
-        let r1: IReplica<int> = LocalReplica(addr1, sendMsg)
-        let r2: IReplica<int> = LocalReplica(addr2, sendMsg)
-
-        network.AddRange([r1; r2])
+        let (r1, r2) = twoTestReplicas(addr1, addr2)
 
         // Populate the two databases with separate events
         r1.Send (StoreEvents (None, events1))
@@ -93,11 +107,7 @@ test
         r1.Send (Sync r2.Address)
         r2.Send (Sync r1.Address)
 
-        let query = {ByTime = Sort.Time.PhysicalValid; Limit = 0uy}
-        let es1 = r1.Read(query) |> Seq.toList
-        let es2 = r2.Read(query) |> Seq.toList
-
-        Seq.equal es1 es2
+        replicasConverged r1 r2        
     )
 
 (*
@@ -109,92 +119,81 @@ test
     (Definition 2.3, Marc Shapiro, Nuno Preguiça, Carlos Baquero, and Marek Zawirski. Conflict-free replicated data types)
 *)
 
-// test
-//     "syncing is commutative"
-//     (fun
-//         ((addrA1, addrB1, addrA2, addrB2) : 
-//             (Address * Address * Address * Address))
-//         (eventsA : (Event.ID * int) list)
-//         (eventsB : (Event.ID * int) list) ->
-            
-//         let rA1 = {Db = Database(); Addr = addrA1}
-//         let rB1 = {Db = Database(); Addr = addrB1}
+test
+    "syncing is commutative"
+    (fun
+        ((addrA1, addrB1, addrA2, addrB2) : 
+            (Address * Address * Address * Address))
+        (eventsA : (Event.ID * int) list)
+        (eventsB : (Event.ID * int) list) ->
 
-//         let rA2 = {Db = Database(); Addr = addrA2}
-//         let rB2 = {Db = Database(); Addr = addrB2}
+        let (rA1, rB1) = twoTestReplicas(addrA1, addrB1)
+        let (rA2, rB2) = twoTestReplicas(addrA2, addrB2)
 
-//         // A replicas have same events
-//         rA1.Db.WriteEvents(None, eventsA)
-//         rA2.Db.WriteEvents(None, eventsA)
+        // A replicas have same events
+        rA1.Send(StoreEvents(None, eventsA))
+        rA2.Send(StoreEvents(None, eventsA))
 
-//         // B replicas have same events
-//         rB1.Db.WriteEvents(None, eventsB)
-//         rB2.Db.WriteEvents(None, eventsB)
+        // B replicas have same events
+        rB1.Send(StoreEvents(None, eventsB))
+        rB2.Send(StoreEvents(None, eventsB))
 
-//         // Sync 1 & 2 in different order; a . b = b . a
-//         send (acrossNetwork [rA1; rB1]) rB1 (Sync rA1.Addr)
-//         send (acrossNetwork [rA2; rB2]) rA2 (Sync rB2.Addr)
+        // Sync 1 & 2 in different order; a . b = b . a
+        rB1.Send(Sync rA1.Address)
+        rA2.Send(Sync rB2.Address)
 
-//         converged rA1.Db rB2.Db
-//     )
+        replicasConverged rA1 rB2
+    )
 
-// test
-//     "syncing is idempotent"
-//     (fun
-//         (addr: Address)
-//         (events : (Event.ID * int) list) ->
+test
+    "syncing is idempotent"
+    (fun
+        (addr: Address)
+        (controlAddr: Address)
+        (events : (Event.ID * int) list) ->
 
-//         let replica = {Addr = addr; Db = Database()}
-//         let controlDb = Database()
+        let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
 
-//         replica.Db.WriteEvents(None, events)
-//         controlDb.WriteEvents(None, events)
+        replica.Send (StoreEvents(None, events))
+        controlReplica.Send(StoreEvents(None, events))
 
-//         send (acrossNetwork [replica]) replica (Sync replica.Addr)
+        replica.Send (Sync replica.Address)
 
-//         converged replica.Db controlDb
-//     )
+        replicasConverged replica controlReplica
+    )
 
-// test
-//     "syncing is associative"
-//     (fun
-//         ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
-//             (Address * Address * Address * Address * Address * Address))
-//         (eventsA : (Event.ID * int) list)
-//         (eventsB : (Event.ID * int) list)
-//         (eventsC : (Event.ID * int) list) ->
+test
+    "syncing is associative"
+    (fun
+        ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
+            (Address * Address * Address * Address * Address * Address))
+        (eventsA : (Event.ID * int) list)
+        (eventsB : (Event.ID * int) list)
+        (eventsC : (Event.ID * int) list) ->
 
-//         let rA1 = {Db = Database(); Addr = addrA1}
-//         let rB1 = {Db = Database(); Addr = addrB1}
-//         let rC1 = {Db = Database(); Addr = addrC1}
+        let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
 
-//         let rA2 = {Db = Database(); Addr = addrA2}
-//         let rB2 = {Db = Database(); Addr = addrB2}
-//         let rC2 = {Db = Database(); Addr = addrC2}
+        let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)
 
-//         // A replicas have same events
-//         rA1.Db.WriteEvents(None, eventsA)
-//         rA2.Db.WriteEvents(None, eventsA)
+        // A replicas have same events
+        rA1.Send (StoreEvents(None, eventsA))
+        rA2.Send (StoreEvents(None, eventsA))
 
-//         // B replicas have same events
-//         rB1.Db.WriteEvents(None, eventsB)
-//         rB2.Db.WriteEvents(None, eventsB)
+        // B replicas have same events
+        rB1.Send (StoreEvents(None, eventsB))
+        rB2.Send (StoreEvents(None, eventsB))
 
-//         // C replicas have same events
-//         rC1.Db.WriteEvents(None, eventsC)
-//         rC2.Db.WriteEvents(None, eventsC)
+        // C replicas have same events
+        rC1.Send (StoreEvents(None, eventsC))
+        rC2.Send (StoreEvents(None, eventsC))
 
-//         let acrossNetwork1 = acrossNetwork [rA1; rB1; rC1]
-//         let acrossNetwork2 = acrossNetwork [rA2; rB2; rC2]
+        // (a . b) . c
+        rB1.Send (Sync rA1.Address)
+        rA1.Send (Sync rC1.Address)
 
-//         // (a . b) . c
-//         send acrossNetwork1 rB1 (Sync rA1.Addr)
-//         send acrossNetwork1 rA1 (Sync rC1.Addr)
+        // a . (b . c)
+        rC2.Send (Sync rB2.Address) 
+        rB2.Send (Sync rA2.Address)
 
-//         // a . (b . c)
-//         send acrossNetwork2 rC2 (Sync rB2.Addr) 
-//         send acrossNetwork2 rB2 (Sync rA2.Addr)
-
-//         converged rC1.Db rA2.Db
-        
-//     )
+        replicasConverged rC1 rA2
+    )

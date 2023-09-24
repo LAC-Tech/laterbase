@@ -41,10 +41,11 @@ type ConstraintViolation<'a> (reason: string, thing: 'a) =
 /// When an event happened in the domain
 [<Measure>] type valid
 
+open FSharp.Data.UnitSystems.SI.UnitSymbols
 [<Measure>] type ms
-[<Measure>] type s
 [<Measure>] type m
 [<Measure>] type h
+// Using signed ints for this to match .NET stdlib
 let msPerS: int64<ms/s> = 1000L<ms/s>
 let sPerM: int64<s/m> = 60L<s/m>
 let mPerH: int64<m/h> = 60L<m/h>
@@ -183,12 +184,11 @@ type Database<'e>() =
     - limit (maximum number of events to return)
 *)
 
-module Sort =
-    type Time = PhysicalValid | LogicalTxn
-    //type Order = Descending | Ascending
+
+type Time = PhysicalValid | LogicalTxn
 
 type ReadQuery = {
-    ByTime: Sort.Time
+    ByTime: Time
     //SortOrder: Sort.Order
     Limit: byte // maximum number of events to return
 }
@@ -214,9 +214,9 @@ type LocalReplica<'e>(address, sendMsg) =
         member val Address = address
         member _.Read(query) = 
             match query.ByTime with
-            | Sort.Time.PhysicalValid -> 
+            | PhysicalValid -> 
                 db.Events |> Dict.toSeq |> Seq.take (int query.Limit)
-            | Sort.Time.LogicalTxn ->
+            | LogicalTxn ->
                 let since = (uint64 query.Limit) * 1UL<sent events>
                 db.ReadEventsInTxnOrder(since)
 
