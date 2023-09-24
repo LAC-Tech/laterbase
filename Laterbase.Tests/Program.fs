@@ -60,7 +60,7 @@ test
         }
         |> Seq.forall id
     )
-    
+
 let testReplicas<'e> addrs =
     let network = ResizeArray<IReplica<'e>>()
     let sendMsg addr = network.Find(fun r -> r.Addr = addr).Send
@@ -72,12 +72,14 @@ let testReplicas<'e> addrs =
 let oneTestReplica addr = testReplicas [addr] |> List.head
 
 let twoTestReplicas (addr1, addr2) =
-    let [r1; r2] = testReplicas [addr1; addr2]
-    (r1, r2)
+    match testReplicas [addr1; addr2] with
+    | [r1; r2] -> (r1, r2)
+    | _ -> failwith "expecting two replicas"
 
 let threeTestReplicas (addr1, addr2, addr3) =
-    let [r1; r2; r3] = testReplicas [addr1; addr2; addr3]
-    (r1, r2, r3)
+    match testReplicas [addr1; addr2; addr3] with
+    | [r1; r2; r3] -> (r1, r2, r3)
+    | _ -> failwith "expecting three replicas"
 
 let replicasConverged (r1: IReplica<'e>) (r2: IReplica<'e>) =
     let query = {ByTime = PhysicalValid; Limit = 0uy}
