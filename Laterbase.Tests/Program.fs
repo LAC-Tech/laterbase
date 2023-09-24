@@ -40,7 +40,7 @@ let test descr testFn =
 
 test
     "Can read back the events you store"
-    (fun (inputEvents: (Event.ID * int64) list) (addr: Address) ->
+    (fun (inputEvents: (Event.ID * Event.Val<int64>) list) (addr: Address) ->
         let r: IReplica<int64> = LocalReplica(addr, fun _ _ -> ())
         seq {
             for _ in 1..100 do
@@ -65,21 +65,19 @@ let testReplicas<'e> addrs =
     let network = ResizeArray<IReplica<'e>>()
     let sendMsg addr = network.Find(fun r -> r.Addr = addr).Send
     let addrToReplica addr = LocalReplica(addr, sendMsg) :> IReplica<'e>
-    let rs = List.map addrToReplica addrs
+    let rs = Array.map addrToReplica addrs
     network.AddRange(rs)
     rs
 
-let oneTestReplica addr = testReplicas [addr] |> List.head
+let oneTestReplica addr = testReplicas[|addr|].[0]
 
 let twoTestReplicas (addr1, addr2) =
-    match testReplicas [addr1; addr2] with
-    | [r1; r2] -> (r1, r2)
-    | _ -> failwith "expecting two replicas"
+    let rs = testReplicas [|addr1; addr2|]
+    (rs[0], rs[1])
 
 let threeTestReplicas (addr1, addr2, addr3) =
-    match testReplicas [addr1; addr2; addr3] with
-    | [r1; r2; r3] -> (r1, r2, r3)
-    | _ -> failwith "expecting three replicas"
+    let rs = testReplicas [|addr1; addr2; addr3|]
+    (rs[0], rs[1], rs[2])
 
 let replicasConverged (r1: IReplica<'e>) (r2: IReplica<'e>) =
     let query = {ByTime = PhysicalValid; Limit = 0uy}
@@ -90,11 +88,11 @@ let replicasConverged (r1: IReplica<'e>) (r2: IReplica<'e>) =
 test 
     "two databases will have the same events if they sync with each other"
     (fun
-        ((addr1, addr2) : (Address * Address))
-        (events1 : (Event.ID * int) list)
-        (events2 : (Event.ID * int) list) ->
+        ((addr1, adrr2) : (Address * Address))
+        (events1 : (Event.ID * Event.Val<int>) list)
+        (events2 : (Event.ID * Event.Val<int>) list) ->
     
-        let (r1, r2) = twoTestReplicas(addr1, addr2)
+        let (r1, r2) = twoTestReplicas(addr1, adrr2)
 
         // Populate the two databases with separate events
         r1.Send (Store (events1, None))
@@ -121,8 +119,8 @@ test
     (fun
         ((addrA1, addrB1, addrA2, addrB2) : 
             (Address * Address * Address * Address))
-        (eventsA : (Event.ID * int) list)
-        (eventsB : (Event.ID * int) list) ->
+        (eventsA : (Event.ID * Event.Val<int>) list)
+        (eventsB : (Event.ID * Event.Val<int>) list) ->
 
         let (rA1, rB1) = twoTestReplicas(addrA1, addrB1)
         let (rA2, rB2) = twoTestReplicas(addrA2, addrB2)
@@ -147,7 +145,7 @@ test
     (fun
         (addr: Address)
         (controlAddr: Address)
-        (events : (Event.ID * int) list) ->
+        (events : (Event.ID * Event.Val<int>) list) ->
 
         let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
 
@@ -164,12 +162,11 @@ test
     (fun
         ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
             (Address * Address * Address * Address * Address * Address))
-        (eventsA : (Event.ID * int) list)
-        (eventsB : (Event.ID * int) list)
-        (eventsC : (Event.ID * int) list) ->
+        (eventsA : (Event.ID * Event.Val<int>) list)
+        (eventsB : (Event.ID * Event.Val<int>) list)
+        (eventsC : (Event.ID * Event.Val<int>) list) ->
 
         let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
-
         let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)
 
         // A replicas have same events

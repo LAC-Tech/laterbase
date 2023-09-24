@@ -31,7 +31,6 @@ module Dict =
     let toSeq (dict: SortedDictionary<'k, 'v>) =
         dict |> Seq.map (fun kvp -> (kvp.Key, kvp.Value))
 
-
 type ConstraintViolation<'a> (reason: string, thing: 'a) =
     inherit System.Exception (reason) 
 
@@ -54,6 +53,17 @@ let mPerH: int64<m/h> = 60L<m/h>
 [<Measure>] type received
 [<Measure>] type sent
 
+/// Address in an actor sense. Used for locating Replicas
+/// Keeping it as a dumb data type so it's easy to send across a network
+[<Struct; IsReadOnly>]
+type Address(id: byte array) =
+    member _.Id = id
+    // Hex string for compactness
+    override this.ToString() = 
+        this.Id
+        |> Array.map (fun b -> b.ToString("X2"))
+        |> String.concat ""
+
 module Event =
     /// IDs must be globally unique and orderable. They should contain within
     /// them the physical valid time. This is so clients can generate their own
@@ -67,27 +77,18 @@ module Event =
     let newId (timestamp: int64<valid ms>) (randomness: byte array) =
         Ulid(int64 timestamp, randomness)
 
-    type Stream<'e> = (ID * 'e) seq
-
-/// Address in an actor sense. Used for locating Replicas
-/// Keeping it as a dumb data type so it's easy to send across a network
-[<Struct; IsReadOnly>]
-type Address(id: byte array) =
-    member _.Id = id
-    // Hex string for compactness
-    override this.ToString() = 
-        this.Id
-        |> Array.map (fun b -> b.ToString("X2"))
-        |> String.concat ""
+    [<Struct; IsReadOnly>]
+    type Val<'payload> = {Origin: Address; Payload: 'payload}
+    type Stream<'payload> = (ID * Val<'payload>) seq
 
 // All of the messages must be idempotent
 [<Struct; IsReadOnly>]
-type  Message<'e> =
+type Message<'payload> =
     | Sync of Address
     | Store of 
-        events:  (Event.ID * 'e) list *
+        events:  (Event.ID * Event.Val<'payload>) list *
         from: (Address * uint64<received events>) option
-    //| StoreEventsAck of uint64<sent events>
+    //| StoreAck of uint64<sent events>
 
 type LogicalClock() =
     // Double sided counter so we can just send single counters across the network
@@ -135,8 +136,9 @@ type LogicalClock() =
             $"└ received = {stringify self.Received}"
         ] |> String.concat "\n"
 
-type Database<'e>() =
-    member val internal Events = SortedDictionary<Event.ID, 'e>()
+type Database<'payload>() =
+    member val internal Events = 
+        SortedDictionary<Event.ID, Event.Val<'payload>>()
     (**
         This imposes a total order on a partial order.
         Should it be a jagged array with concurrent events stored together? 
@@ -163,7 +165,7 @@ type Database<'e>() =
             if self.Events.TryAdd(k, v) then
                 self.AppendLog.Add k
 
-        if not (self.Events.Count = self.AppendLog.Count) then
+        if (self.Events.Count <> self.AppendLog.Count) then
             raise (ConstraintViolation ("Storage is inconsistent", self))
 
     override self.ToString() =
