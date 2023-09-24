@@ -11,6 +11,12 @@ open NetUlid
 module Option =
     let ofTry (found, value) = if found then Some value else None
 
+let equal = (=)
+
+module Seq =
+    let equal<'a when 'a : equality> (s1: 'a seq) (s2: 'a seq) = 
+        Seq.forall2 (=) s1 s2
+
 let inline flip f y x = f x y
 
 module Dict =
@@ -20,7 +26,11 @@ module Dict =
     let getOrDefault k defaultValue (dict: SortedDictionary<'k, 'v>)  = 
         get k dict |> Option.defaultValue defaultValue
     
-    let getKeyValue k dict = get k dict |> Option.map (fun v -> (k, v)) 
+    let getKeyValue k dict = get k dict |> Option.map (fun v -> (k, v))
+
+    let toSeq (dict: SortedDictionary<'k, 'v>) =
+        dict |> Seq.map (fun kvp -> (kvp.Key, kvp.Value))
+
 
 type ConstraintViolation<'a> (reason: string, thing: 'a) =
     inherit System.Exception (reason) 
@@ -134,7 +144,7 @@ type Database<'e>() =
     member val internal LogicalClock = LogicalClock()
 
     member self.ReadEventCount() =
-        Checked.uint64 self.AppendLog.Count * 1uL<events received>
+        Checked.uint64 self.AppendLog.Count * 1UL<events received>
 
     member self.ReadEventsInTxnOrder (since: uint64<sent events>) =
         self.AppendLog 
@@ -146,7 +156,7 @@ type Database<'e>() =
 
     member self.WriteEvents(from, newEvents) =
         // If from another replica, update logical clock to reflect this
-        from |> Option.iter self.LogicalClock.AddReceived
+        Option.iter self.LogicalClock.AddReceived from
 
         for (k, v) in newEvents do
             if self.Events.TryAdd(k, v) then
@@ -174,20 +184,13 @@ type Database<'e>() =
 *)
 
 module Sort =
-    type Time = PhysicalValidTime | LogicalTxnTime
-    type Order = Descending | Ascending
+    type Time = PhysicalValid | LogicalTxn
+    //type Order = Descending | Ascending
 
 type ReadQuery = {
-    SortTime: Sort.Time
-    SortOrder: Sort.Order
-    limit: byte // maximum number of events to return
-}
-
-// Example of constructing a query
-let query = {
-    SortTime = Sort.PhysicalValidTime
-    SortOrder = Sort.Ascending
-    limit = 255uy
+    ByTime: Sort.Time
+    //SortOrder: Sort.Order
+    Limit: byte // maximum number of events to return
 }
 
 module Replica =
@@ -207,10 +210,15 @@ type IReplica<'e> =
 type LocalReplica<'e>(address, sendMsg) =
     let db = Database<'e>()
     
-    interface IReplica<'e> with 
+    interface IReplica<'e> with
         member val Address = address
-        member _.Query+(since: uint64<sent events>) = 
-            db.ReadEvents(since) |> fst 
+        member _.Read(query) = 
+            match query.ByTime with
+            | Sort.Time.PhysicalValid -> 
+                db.Events |> Dict.toSeq |> Seq.take (int query.Limit)
+            | Sort.Time.LogicalTxn ->
+                let since = (uint64 query.Limit) * 1UL<sent events>
+                db.ReadEventsInTxnOrder(since)
 
         member _.Debug() = Some {
             AppendLog = db.AppendLog

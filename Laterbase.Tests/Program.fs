@@ -47,7 +47,8 @@ test
             for _ in 1..100 do
                 r.Send (StoreEvents (None, inputEvents))
 
-                let outputEvents = r.Query 0UL<events sent>
+                let outputEvents = 
+                    r.Read({ByTime = Sort.Time.LogicalTxn; Limit = 0uy})
 
                 let outputEvents = outputEvents |> List.ofSeq
 
@@ -92,17 +93,11 @@ test
         r1.Send (Sync r2.Address)
         r2.Send (Sync r1.Address)
 
-        let es1 = r1.Query(0UL<sent events>) |> List.ofSeq
-        let es2 = r2.Query(0UL<sent events>) |> List.ofSeq
+        let query = {ByTime = Sort.Time.PhysicalValid; Limit = 0uy}
+        let es1 = r1.Read(query) |> Seq.toList
+        let es2 = r2.Read(query) |> Seq.toList
 
-        if es1 = es2 then
-            true
-        else
-            eprintfn "ERROR"
-            eprintfn "es1 = %A" es1
-            eprintfn "es2 = %A" es2
-
-            false
+        Seq.equal es1 es2
     )
 
 (*
