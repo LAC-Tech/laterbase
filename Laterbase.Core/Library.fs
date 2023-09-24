@@ -134,7 +134,7 @@ type Database<'e>() =
     member val internal LogicalClock = LogicalClock()
 
     member self.ReadEventCount() =
-        Checked.uint64 self.AppendLog.Count * 1uL<received events>
+        Checked.uint64 self.AppendLog.Count * 1uL<events received>
 
     member self.ReadEventsInTxnOrder (since: uint64<sent events>) =
         self.AppendLog 
@@ -166,6 +166,30 @@ type Database<'e>() =
 
         $"Database\n└ events = [{es}]\n└ log = [{appendLogStr}]\n{self.LogicalClock}"
 
+(**
+    Read Queries return an event stream. We need to specify
+    - the order (logical transaction time, physical valid time)
+    - descending or ascending
+    - limit (maximum number of events to return)
+*)
+
+module Sort =
+    type Time = PhysicalValidTime | LogicalTxnTime
+    type Order = Descending | Ascending
+
+type ReadQuery = {
+    SortTime: Sort.Time
+    SortOrder: Sort.Order
+    limit: byte // maximum number of events to return
+}
+
+// Example of constructing a query
+let query = {
+    SortTime = Sort.PhysicalValidTime
+    SortOrder = Sort.Ascending
+    limit = 255uy
+}
+
 module Replica =
     /// For local databases - can see implementation details
     type DebugView = {
@@ -176,10 +200,8 @@ module Replica =
 
 type IReplica<'e> =
     abstract member Address: Address
-
-    /// Return events in transaction time order
-    abstract member Query: since: uint64<sent events> -> Event.Stream<'e>
-    abstract member QueryDebug: unit -> Replica.DebugView option
+    abstract member Read: query: ReadQuery -> Event.Stream<'e>
+    abstract member Debug: unit -> Replica.DebugView option
     abstract member Send: Message<'e> -> unit
 
 type LocalReplica<'e>(address, sendMsg) =
@@ -187,10 +209,10 @@ type LocalReplica<'e>(address, sendMsg) =
     
     interface IReplica<'e> with 
         member val Address = address
-        member _.Query(since: uint64<sent events>) = 
+        member _.Query+(since: uint64<sent events>) = 
             db.ReadEvents(since) |> fst 
 
-        member _.QueryDebug() = Some {
+        member _.Debug() = Some {
             AppendLog = db.AppendLog
             LogicalClock = db.LogicalClock.View()
         }
