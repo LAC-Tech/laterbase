@@ -44,7 +44,7 @@ test
         let r: IReplica<int64> = LocalReplica(addr, fun _ _ -> ())
         seq {
             for _ in 1..100 do
-                r.Send (Store (inputEvents, None))
+                r.Recv (Store (inputEvents, None))
 
                 let outputEvents = 
                     r.Read({ByTime = LogicalTxn; Limit = 0uy})
@@ -63,7 +63,7 @@ test
 
 let testReplicas<'e> addrs =
     let network = ResizeArray<IReplica<'e>>()
-    let sendMsg addr = network.Find(fun r -> r.Addr = addr).Send
+    let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
     let addrToReplica addr = LocalReplica(addr, sendMsg) :> IReplica<'e>
     let rs = Array.map addrToReplica addrs
     network.AddRange(rs)
@@ -95,12 +95,12 @@ test
         let (r1, r2) = twoTestReplicas(addr1, adrr2)
 
         // Populate the two databases with separate events
-        r1.Send (Store (events1, None))
-        r2.Send (Store (events2, None))
+        r1.Recv (Store (events1, None))
+        r2.Recv (Store (events2, None))
 
         // Bi-directional sync
-        r1.Send (Sync r2.Addr)
-        r2.Send (Sync r1.Addr)
+        r1.Recv (Sync r2.Addr)
+        r2.Recv (Sync r1.Addr)
 
         replicasConverged r1 r2        
     )
@@ -126,16 +126,16 @@ test
         let (rA2, rB2) = twoTestReplicas(addrA2, addrB2)
 
         // A replicas have same events
-        rA1.Send(Store(eventsA, None))
-        rA2.Send(Store(eventsA, None))
+        rA1.Recv(Store(eventsA, None))
+        rA2.Recv(Store(eventsA, None))
 
         // B replicas have same events
-        rB1.Send(Store(eventsB, None))
-        rB2.Send(Store(eventsB, None))
+        rB1.Recv(Store(eventsB, None))
+        rB2.Recv(Store(eventsB, None))
 
         // Sync 1 & 2 in different order; a . b = b . a
-        rB1.Send(Sync rA1.Addr)
-        rA2.Send(Sync rB2.Addr)
+        rB1.Recv(Sync rA1.Addr)
+        rA2.Recv(Sync rB2.Addr)
 
         replicasConverged rA1 rB2
     )
@@ -149,10 +149,10 @@ test
 
         let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
 
-        replica.Send (Store(events, None))
-        controlReplica.Send(Store(events, None))
+        replica.Recv (Store(events, None))
+        controlReplica.Recv(Store(events, None))
 
-        replica.Send (Sync replica.Addr)
+        replica.Recv (Sync replica.Addr)
 
         replicasConverged replica controlReplica
     )
@@ -170,24 +170,24 @@ test
         let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)
 
         // A replicas have same events
-        rA1.Send (Store(eventsA, None))
-        rA2.Send (Store(eventsA, None))
+        rA1.Recv (Store(eventsA, None))
+        rA2.Recv (Store(eventsA, None))
 
         // B replicas have same events
-        rB1.Send (Store(eventsB, None))
-        rB2.Send (Store(eventsB, None))
+        rB1.Recv (Store(eventsB, None))
+        rB2.Recv (Store(eventsB, None))
 
         // C replicas have same events
-        rC1.Send (Store(eventsC, None))
-        rC2.Send (Store(eventsC, None))
+        rC1.Recv (Store(eventsC, None))
+        rC2.Recv (Store(eventsC, None))
 
         // (a . b) . c
-        rB1.Send (Sync rA1.Addr)
-        rA1.Send (Sync rC1.Addr)
+        rB1.Recv (Sync rA1.Addr)
+        rA1.Recv (Sync rC1.Addr)
 
         // a . (b . c)
-        rC2.Send (Sync rB2.Addr) 
-        rB2.Send (Sync rA2.Addr)
+        rC2.Recv (Sync rB2.Addr) 
+        rB2.Recv (Sync rA2.Addr)
 
         replicasConverged rC1 rA2
     )

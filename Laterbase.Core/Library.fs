@@ -207,7 +207,8 @@ type IReplica<'e> =
     abstract member Addr: Address
     abstract member Read: query: ReadQuery -> Event.Stream<'e>
     abstract member Debug: unit -> Replica.DebugView option
-    abstract member Send: Message<'e> -> unit
+    /// Replicas *receive* a message that is *sent* across some medium
+    abstract member Recv: Message<'e> -> unit
 
 type LocalReplica<'e>(addr, sendMsg) =
     let db = Database<'e>()
@@ -227,7 +228,7 @@ type LocalReplica<'e>(addr, sendMsg) =
             LogicalClock = db.LogicalClock.View()
         }
 
-        member _.Send (msg: Message<'e>) =
+        member _.Recv (msg: Message<'e>) =
             match msg with        
             | Sync destAddr ->
                 let since = db.ReadEventCountFrom destAddr
