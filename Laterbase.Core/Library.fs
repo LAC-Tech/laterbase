@@ -84,9 +84,9 @@ type Address(id: byte array) =
 [<Struct; IsReadOnly>]
 type  Message<'e> =
     | Sync of Address
-    | StoreEvents of 
-        from: (Address * uint64<received events>) option *
-        events:  (Event.ID * 'e) list
+    | Store of 
+        events:  (Event.ID * 'e) list *
+        from: (Address * uint64<received events>) option
     //| StoreEventsAck of uint64<sent events>
 
 type LogicalClock() =
@@ -202,16 +202,16 @@ module Replica =
     }
 
 type IReplica<'e> =
-    abstract member Address: Address
+    abstract member Addr: Address
     abstract member Read: query: ReadQuery -> Event.Stream<'e>
     abstract member Debug: unit -> Replica.DebugView option
     abstract member Send: Message<'e> -> unit
 
-type LocalReplica<'e>(address, sendMsg) =
+type LocalReplica<'e>(addr, sendMsg) =
     let db = Database<'e>()
     
     interface IReplica<'e> with
-        member val Address = address
+        member val Addr = addr
         member _.Read(query) = 
             match query.ByTime with
             | PhysicalValid -> 
@@ -231,6 +231,6 @@ type LocalReplica<'e>(address, sendMsg) =
                 let since = db.ReadEventCountFrom destAddr
                 let events = db.ReadEventsInTxnOrder since
                 let lc = db.ReadEventCount()
-                StoreEvents (Some (address, lc), List.ofSeq events)
+                Store (List.ofSeq events, Some (addr, lc))
                 |> sendMsg destAddr
-            | StoreEvents (from, events) -> db.WriteEvents(from, events)
+            | Store (events, from) -> db.WriteEvents(from, events)
