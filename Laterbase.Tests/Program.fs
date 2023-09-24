@@ -60,17 +60,12 @@ test
         }
         |> Seq.forall id
     )
-
-let sendToReplicas<'e> (network: ResizeArray<IReplica<'e>>) addr =
-    let r = network.Find(fun r -> r.Addr = addr)
-    r.Send
-
-let testReplicas addrs =
-    let network = ResizeArray<IReplica<int>>()
-    let sendMsg = sendToReplicas network
-
-    let rs: IReplica<int> list = 
-        List.map (fun addr -> LocalReplica(addr, sendMsg)) addrs
+    
+let testReplicas<'e> addrs =
+    let network = ResizeArray<IReplica<'e>>()
+    let sendMsg addr = network.Find(fun r -> r.Addr = addr).Send
+    let addrToReplica addr = LocalReplica(addr, sendMsg) :> IReplica<'e>
+    let rs = List.map addrToReplica addrs
     network.AddRange(rs)
     rs
 
