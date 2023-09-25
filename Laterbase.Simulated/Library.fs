@@ -6,6 +6,14 @@ open System.Threading.Tasks
 
 open Laterbase.Core
 
+let Replicas<'e> addrs =
+    let network = ResizeArray<IReplica<'e>>()
+    let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
+    let addrToReplica addr = LocalReplica(addr, sendMsg) :> IReplica<'e>
+    let rs = Array.map addrToReplica addrs
+    network.AddRange(rs)
+    rs
+
 (*
 type Ether<'e> = SortedDictionary<Guid, Replica<'e>>
 

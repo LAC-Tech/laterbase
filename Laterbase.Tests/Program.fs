@@ -1,4 +1,5 @@
 ﻿open FsCheck
+open Laterbase
 open Laterbase.Core
 open System
 
@@ -62,22 +63,14 @@ test
         |> Seq.forall id
     )
 
-let testReplicas<'e> addrs =
-    let network = ResizeArray<IReplica<'e>>()
-    let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
-    let addrToReplica addr = LocalReplica(addr, sendMsg) :> IReplica<'e>
-    let rs = Array.map addrToReplica addrs
-    network.AddRange(rs)
-    rs
-
-let oneTestReplica addr = testReplicas[|addr|].[0]
+let oneTestReplica addr = Simulated.Replicas[|addr|].[0]
 
 let twoTestReplicas (addr1, addr2) =
-    let rs = testReplicas [|addr1; addr2|]
+    let rs = Simulated.Replicas [|addr1; addr2|]
     (rs[0], rs[1])
 
 let threeTestReplicas (addr1, addr2, addr3) =
-    let rs = testReplicas [|addr1; addr2; addr3|]
+    let rs = Simulated.Replicas [|addr1; addr2; addr3|]
     (rs[0], rs[1], rs[2])
 
 let replicasConverged (r1: IReplica<'e>) (r2: IReplica<'e>) =

@@ -1,8 +1,10 @@
 ﻿open System
-
+open Laterbase
 open Laterbase.Core
-
 open Terminal.Gui
+
+/// Deterministic Simulation Tester for Laterbase
+/// Inspired by Tigerbeetle Simulator, as well as Will Wilsons talk.
 
 let speedMenu = 
     seq {"Pause"; "Turtle"; "Llama"; "Cheetah"; "Tiger Beetle"} 
@@ -110,6 +112,8 @@ type ReplicaInspector(replica: IReplica<'e>) =
             Table = eventsDt
         )
 
+        tabs.AddTab(TabView.Tab("Events", eventsView), true)
+
         replica.Debug() |> Option.iter (fun viewData ->
             let appendLogView = new ListView(
                 viewData.AppendLog |> Seq.toArray,
@@ -134,53 +138,25 @@ type ReplicaInspector(replica: IReplica<'e>) =
                 Height = Dim.Fill()
             )
 
-            tabs.AddTab(TabView.Tab("Events", eventsView), true)
             tabs.AddTab(TabView.Tab("AppendLog", appendLogView), false)
             tabs.AddTab(TabView.Tab("LogicalClock", logicalClockView), false)
-
         )
+
+
 
         base.Add tabs
 
-[<EntryPoint>]
-let main _ =
-    let db = LocalDatabase<string>()
+// TODO: arbitrary
+let addrLen = 16
 
-    (db :> IDatabase<_>).WriteEvents(None, [
-        Event.ID.Generate(), "Monday"; 
-        Event.ID.Generate(), "Tuesday"
-    ])
-
-    Application.Init()
-    Application.Top.add_KeyPress(fun args ->
-        match args.KeyEvent.Key with
-        | Key.Esc -> Application.RequestStop ()
-        | _ -> ()
-    )
-    Application.Top.Add (new DBInspector(db))
-    Application.Run()
-    Application.Shutdown()
-
-    //mainLoop () b
-    //Application.Shutdown()
-
-
-
-    0
-(*
-open Laterbase.Core
-open Laterbase.Simulated
-/// Deterministic Simulation Tester for Laterbase
-/// Inspired by Tigerbeetle Simulator, as well as Will Wilsons talk.
-
-type Event = byte
-
-let log (s: string) = printf $"{s}"
+let randAddr (rng: Random) =
+    let bytes = Array.zeroCreate<byte> addrLen
+    rng.NextBytes bytes
+    Address bytes
 
 [<EntryPoint>]
 let main args =
-    Console.Clear()
-    
+    // Can replay with a given seed if one is provided
     let seed = 
         match args with
         | [||] -> Random().Next()
@@ -192,20 +168,36 @@ let main args =
         | _ -> failwith "too many args"
 
     let rng = Random seed
-    let addressFactory = AddressFactory<Event> seed
 
-    let replicaCount = rng.Next(2, 16)
+    let replicas = Simulated.Replicas [|randAddr rng; randAddr rng|];
+    replicas[0].Recv (StoreNew [
+        Event.ID.Generate(), "Monday"; 
+        Event.ID.Generate(), "Tuesday"
+    ])
 
-    let addresses = 
-        seq { 0 .. replicaCount } 
-        |> Seq.map (fun _ -> addressFactory.Create ())
-        |> Seq.toList
+    for e in replicas[0].Read({ByTime = PhysicalValid; Limit = 0uy}) do
+        printfn $"{e}"
 
-    for addr in addresses do
-        $"Replica created at address: {addr}\n" |> log
+    
+    (*
+    Application.Init()
 
-    for t in 0L<Time.ms> .. 10L<Time.ms> .. Time.s do
-        printfn "%A miliseconds elapsed" t
+    let inspector = new ReplicaInspector(replicas[0])
+    // TODO: there should be some standard keypress to stop this?
+    Application.Top.add_KeyPress(fun args ->
+        match args.KeyEvent.Key with
+        | Key.Esc -> Application.RequestStop ()
+        | _ -> ()
+    )
+
+    Application.Top.Add (inspector)
+    Application.Run()
+    Application.Shutdown()
+    *)
 
     0
+
+(*
+    for t in 0L<Time.ms> .. 10L<Time.ms> .. Time.s do
+        printfn "%A miliseconds elapsed" t
 *)
