@@ -177,29 +177,27 @@ type LocalReplica<'payload>(addr, sendMsg) =
         Received = SortedDictionary<Address, uint64<received events>>()
     |}
 
-    let readEventsInTxnOrder since = 
+    let readEventsInTxnOrder since =
         appendLog
         |> Seq.skip (Checked.int since - 1) 
         |> Seq.choose (flip Dict.getKeyValue events)
 
-    member private self.Assert(condition, msg) = 
+    // Only add to the append log if the event does not already exist
+    let addEvent (k, v) = if events.TryAdd(k, v) then appendLog.Add k
+
+    member private self.Assert(condition, msg) =
         if condition then
             raise (ReplicaConstraintViolation(msg, self))
 
-    member private self.WriteEvents newEvents =
-        for (k, v: Event.Val<'payload>) in newEvents do
-            // Only add to the append log if the event does not already exist
-            if events.TryAdd(k, v) then
-                appendLog.Add k
-
+    member private self.CheckAppendLog() =
         self.Assert(events.Count > appendLog.Count, "Append log is too short")
         self.Assert(events.Count < appendLog.Count, "Append log is too long")
     
     interface IReplica<'payload> with
         member val Addr = addr
-        member _.Read(query) = 
+        member _.Read(query) =
             match query.ByTime with
-            | PhysicalValid -> 
+            | PhysicalValid ->
                 events |> Dict.toSeq |> Seq.take (int query.Limit)
             | LogicalTxn ->
                 let since = (uint64 query.Limit) * 1UL<sent events>
@@ -208,11 +206,10 @@ type LocalReplica<'payload>(addr, sendMsg) =
         member _.Debug() = Some {
             AppendLog = appendLog
             LogicalClock = logicalClock.Sent.Join(
-                logicalClock.Received, 
+                logicalClock.Received,
                 (fun kvp -> kvp.Key),
                 (fun kvp -> kvp.Key),
-                (fun sent received -> 
-                    (sent.Key, sent.Value, received.Value)))
+                (fun sent received -> (sent.Key, sent.Value, received.Value)))
         }
 
         member self.Recv (msg: Message<'payload>) =
@@ -222,16 +219,22 @@ type LocalReplica<'payload>(addr, sendMsg) =
                     logicalClock.Sent
                     |> Dict.getOrDefault destAddr 0UL<events sent>
                     |> readEventsInTxnOrder
+                    |> Seq.filter (fun (k, v) -> v.Origin <> addr)
                     |> Seq.toList
-
-                let lc = Checked.uint64 appendLog.Count * 1UL<events received>
-                Store(events, (addr, lc)) |> sendMsg destAddr
+                let numEventsReceived = 
+                    Checked.uint64 appendLog.Count * 1UL<events received>
+                Store(events, (addr, numEventsReceived)) |> sendMsg destAddr
+            
             | Store (events, (addr, numEventsReceived)) ->
                 // If from another replica, update logical clock to reflect this
                 logicalClock.Received[addr] <- numEventsReceived
-                self.WriteEvents events
+                for (k, v) in events do
+                    self.Assert(v.Origin = addr, "Storing redundant events")
+                    addEvent(k, v)
+                self.CheckAppendLog()
+            
             | StoreNew idPayloadPairs ->
                 let toEvents (id, payload) = (id, Event.newVal addr payload)
-                idPayloadPairs
-                |> List.map toEvents
-                |> self.WriteEvents
+                let events = List.map toEvents idPayloadPairs
+                Seq.iter addEvent events
+                self.CheckAppendLog()
