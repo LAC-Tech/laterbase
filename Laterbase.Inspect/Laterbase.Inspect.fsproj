@@ -9,4 +9,12 @@
     <Compile Include="Library.fs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Terminal.Gui" Version="1.14.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Laterbase.Core\Laterbase.Core.fsproj" />
+  </ItemGroup>
+
 </Project>

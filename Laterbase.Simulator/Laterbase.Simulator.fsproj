@@ -12,10 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Laterbase.Simulated\Laterbase.Simulated.fsproj" />
     <ProjectReference Include="..\Laterbase.Core\Laterbase.Core.fsproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Terminal.Gui" Version="1.14.0" />
+    <ProjectReference Include="..\Laterbase.Inspect\Laterbase.Inspect.fsproj" />
   </ItemGroup>
 
 </Project>
