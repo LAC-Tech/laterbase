@@ -76,7 +76,7 @@ let mainLoop () =
 
     loop ()
 
-type DBInspector(db: LocalDatabase<'e>) =
+type ReplicaInspector(replica: IReplica<'e>) =
     inherit Window(
         "Laterbase Inspector",
         X = 0,
@@ -86,7 +86,7 @@ type DBInspector(db: LocalDatabase<'e>) =
     )
 
     do 
-        let viewData = db.View()
+        let events = replica.Read({ByTime = PhysicalValid; Limit = 0uy})
 
         let tabs = new TabView(
             X = 0,
@@ -99,7 +99,7 @@ type DBInspector(db: LocalDatabase<'e>) =
         eventsDt.Columns.Add "ID" |> ignore
         eventsDt.Columns.Add "Value" |> ignore
 
-        for (k, v) in viewData.Events do
+        for (k, v) in events do
             eventsDt.Rows.Add(k, v) |> ignore
 
         let eventsView = new TableView(
@@ -110,39 +110,38 @@ type DBInspector(db: LocalDatabase<'e>) =
             Table = eventsDt
         )
 
-        let appendLogView = new ListView(
-            viewData.AppendLog |> Seq.toArray,
-            X = 0,
-            Y = 0,
-            Width = Dim.Fill(),
-            Height = Dim.Fill()
+        replica.Debug() |> Option.iter (fun viewData ->
+            let appendLogView = new ListView(
+                viewData.AppendLog |> Seq.toArray,
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
+                Height = Dim.Fill()
+            )
+
+            let logicalClockDt = new Data.DataTable()
+            logicalClockDt.Columns.Add "Address" |> ignore
+            logicalClockDt.Columns.Add "Sent" |> ignore
+            logicalClockDt.Columns.Add "Received" |> ignore
+            for (addr, sent, received) in viewData.LogicalClock do
+                logicalClockDt.Rows.Add(addr, sent, received) |> ignore
+
+            let logicalClockView = new TableView(
+                logicalClockDt,
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(),
+                Height = Dim.Fill()
+            )
+
+            tabs.AddTab(TabView.Tab("Events", eventsView), true)
+            tabs.AddTab(TabView.Tab("AppendLog", appendLogView), false)
+            tabs.AddTab(TabView.Tab("LogicalClock", logicalClockView), false)
+
         )
-
-        let logicalClockDt = new Data.DataTable()
-        logicalClockDt.Columns.Add "Address" |> ignore
-        logicalClockDt.Columns.Add "Sent" |> ignore
-        logicalClockDt.Columns.Add "Received" |> ignore
-        for (addr, sent, received) in viewData.LogicalClock do
-            logicalClockDt.Rows.Add(addr, sent, received) |> ignore
-
-
-        let logicalClockView = new TableView(
-            logicalClockDt,
-            X = 0,
-            Y = 0,
-            Width = Dim.Fill(),
-            Height = Dim.Fill()
-        )
-
-        tabs.AddTab(TabView.Tab("Events", eventsView), true)
-        tabs.AddTab(TabView.Tab("AppendLog", appendLogView), false)
-        tabs.AddTab(TabView.Tab("LogicalClock", logicalClockView), false)
 
         base.Add tabs
 
-
-
-        
 [<EntryPoint>]
 let main _ =
     let db = LocalDatabase<string>()
