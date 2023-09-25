@@ -79,16 +79,19 @@ module Event =
 
     [<Struct; IsReadOnly>]
     type Val<'payload> = {Origin: Address; Payload: 'payload}
+
+    let newVal addr payload = {Origin = addr; Payload = payload }
+
     type Stream<'payload> = (ID * Val<'payload>) seq
 
 // All of the messages must be idempotent
 [<Struct; IsReadOnly>]
 type Message<'payload> =
-    | Sync of Address
+    | Sync of destAddr: Address
     | Store of 
-        events:  (Event.ID * Event.Val<'payload>) list *
-        from: (Address * uint64<received events>) option
-    //| StoreAck of uint64<sent events>
+        events: (Event.ID * Event.Val<'payload>) list *
+        from: (Address * uint64<received events>)
+    | StoreNew of (Event.ID * 'payload) list
 
 type LogicalClock() =
     // Double sided counter so we can just send single counters across the network
@@ -157,10 +160,11 @@ type Database<'payload>() =
     member self.ReadEventCountFrom(destAddr) = 
         self.LogicalClock.EventsSentFrom destAddr
 
-    member self.WriteEvents(from, newEvents) =
-        // If from another replica, update logical clock to reflect this
-        Option.iter self.LogicalClock.AddReceived from
+    /// TODO: better name
+    /// TODO: what's the point of having a logical clock object? 
+    member self.UpdateLogicalClock = self.LogicalClock.AddReceived
 
+    member self.WriteEvents newEvents =
         for (k, v) in newEvents do
             if self.Events.TryAdd(k, v) then
                 self.AppendLog.Add k
@@ -229,11 +233,19 @@ type LocalReplica<'e>(addr, sendMsg) =
         }
 
         member _.Recv (msg: Message<'e>) =
-            match msg with        
+            match msg with
             | Sync destAddr ->
                 let since = db.ReadEventCountFrom destAddr
                 let events = db.ReadEventsInTxnOrder since
                 let lc = db.ReadEventCount()
-                Store (List.ofSeq events, Some (addr, lc))
+                Store (List.ofSeq events, (addr, lc))
                 |> sendMsg destAddr
-            | Store (events, from) -> db.WriteEvents(from, events)
+            | Store (events, from) ->
+                // If from another replica, update logical clock to reflect this
+                db.UpdateLogicalClock from
+                db.WriteEvents events
+            | StoreNew newEvents ->
+                newEvents
+                |> List.map (fun (id, payload) -> 
+                    (id, Event.newVal addr payload))
+                |> db.WriteEvents
