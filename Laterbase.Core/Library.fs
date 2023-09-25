@@ -11,8 +11,6 @@ open NetUlid
 module Option =
     let ofTry (found, value) = if found then Some value else None
 
-let equal = (=)
-
 module Seq =
     let equal<'a when 'a : equality> (s1: 'a seq) (s2: 'a seq) = 
         Seq.forall2 (=) s1 s2
@@ -30,9 +28,6 @@ module Dict =
 
     let toSeq (dict: SortedDictionary<'k, 'v>) =
         dict |> Seq.map (fun kvp -> (kvp.Key, kvp.Value))
-
-type ConstraintViolation<'a> (reason: string, thing: 'a) =
-    inherit System.Exception (reason) 
 
 /// When a replica recorded an event
 [<Measure>] type transaction
@@ -158,8 +153,12 @@ type Database<'payload>() =
             if self.Events.TryAdd(k, v) then
                 self.AppendLog.Add k
 
-        if (self.Events.Count <> self.AppendLog.Count) then
-            raise (ConstraintViolation ("Storage is inconsistent", self))
+        if (self.Events.Count > self.AppendLog.Count) then
+            Error "Append log is too short"
+        elif (self.Events.Count < self.AppendLog.Count) then
+            Error "Append log is too long"
+        else
+            Ok ()
 
     override self.ToString() =
         let es = 
@@ -194,6 +193,9 @@ module Replica =
             (Address * uint64<events sent> * uint64<events received>) seq
     }
 
+/// This is meant to be used by client code.
+/// Think pouchDBs db class, where whether it's local or remote is abstracted
+/// TODO: return Tasks
 type IReplica<'e> =
     abstract member Addr: Address
     abstract member Read: query: ReadQuery -> Event.Stream<'e>
@@ -201,8 +203,19 @@ type IReplica<'e> =
     /// Replicas *receive* a message that is *sent* across some medium
     abstract member Recv: Message<'e> -> unit
 
+exception MyError of string
+
+type ConstraintViolation<'e> (reason: string, replica: IReplica<'e>) =
+    inherit Exception (reason)
+    member val Replica = replica
+
 type LocalReplica<'e>(addr, sendMsg) =
     let db = Database<'e>()
+
+    member private self.ThrowIfErr<'e>(res) =
+        match res with
+        | Ok x -> x
+        | Error msg -> raise (ConstraintViolation<'e>(msg, self))
     
     interface IReplica<'e> with
         member val Addr = addr
@@ -219,7 +232,7 @@ type LocalReplica<'e>(addr, sendMsg) =
             LogicalClock = db.LogicalClock.View()
         }
 
-        member _.Recv (msg: Message<'e>) =
+        member self.Recv (msg: Message<'e>) =
             match msg with
             | Sync destAddr ->
                 let since = db.ReadEventCountFrom destAddr
@@ -230,7 +243,10 @@ type LocalReplica<'e>(addr, sendMsg) =
             | Store (events, from) ->
                 // If from another replica, update logical clock to reflect this
                 db.UpdateLogicalClock from
-                db.WriteEvents events
+                db.WriteEvents events |> self.ThrowIfErr
             | StoreNew idPayloadPairs ->
                 let toEvents (id, payload) = (id, Event.newVal addr payload)
-                idPayloadPairs |> List.map toEvents |> db.WriteEvents
+                idPayloadPairs
+                |> List.map toEvents
+                |> db.WriteEvents
+                |> self.ThrowIfErr
