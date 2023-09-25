@@ -123,54 +123,6 @@ type LogicalClock() =
             $"└ received = {stringify self.Received}"
         ] |> String.concat "\n"
 
-type Database<'payload>() =
-    member val internal Events = 
-        SortedDictionary<Event.ID, Event.Val<'payload>>()
-    (**
-        This imposes a total order on a partial order.
-        Should it be a jagged array with concurrent events stored together? 
-    *)
-    member val internal AppendLog = ResizeArray<Event.ID>()
-    member val internal LogicalClock = LogicalClock()
-
-    member self.ReadEventCount() =
-        Checked.uint64 self.AppendLog.Count * 1UL<events received>
-
-    member self.ReadEventsInTxnOrder (since: uint64<sent events>) =
-        self.AppendLog 
-        |> Seq.skip (Checked.int since - 1) 
-        |> Seq.choose (flip Dict.getKeyValue self.Events)
-
-    member self.ReadEventCountFrom(destAddr) = 
-        Dict.getOrDefault destAddr 0UL<events sent> self.LogicalClock.Sent 
-
-    /// TODO: better name? 
-    member self.UpdateLogicalClock(addr, numEventsReceived) = 
-        self.LogicalClock.Received[addr] <- numEventsReceived
-
-    member self.WriteEvents newEvents =
-        for (k, v) in newEvents do
-            if self.Events.TryAdd(k, v) then
-                self.AppendLog.Add k
-
-        if (self.Events.Count > self.AppendLog.Count) then
-            Error "Append log is too short"
-        elif (self.Events.Count < self.AppendLog.Count) then
-            Error "Append log is too long"
-        else
-            Ok ()
-
-    override self.ToString() =
-        let es = 
-            [for e in self.Events -> $"{e.Key}, {e.Value}" ]
-            |> String.concat "; "
-
-        let appendLogStr =
-            [for id in self.AppendLog -> $"{id}" ]
-            |> String.concat "; "
-
-        $"Database\n└ events = [{es}]\n└ log = [{appendLogStr}]\n{self.LogicalClock}"
-
 (**
     Read Queries return an event stream. We need to specify
     - the order (logical transaction time, physical valid time)
@@ -205,48 +157,81 @@ type IReplica<'e> =
 
 exception MyError of string
 
-type ConstraintViolation<'e> (reason: string, replica: IReplica<'e>) =
+/// These are for errors I consider to be un-recoverable.
+/// So, why not use an assertion?
+/// - Wanted them to crash the program in both prod and dev. (Oppa Tiger Style)
+/// - Wanted to catch them in the sim and bring up a GUI to view state
+type ReplicaConstraintViolation<'e> (reason: string, replica: IReplica<'e>) =
     inherit Exception (reason)
     member val Replica = replica
 
-type LocalReplica<'e>(addr, sendMsg) =
-    let db = Database<'e>()
+type LocalReplica<'payload>(addr, sendMsg) =
+    let events = SortedDictionary<Event.ID, Event.Val<'payload>>()
+    (**
+        This imposes a total order on a partial order.
+        Should it be a jagged array with concurrent events stored together? 
+    *)
+    let appendLog = ResizeArray<Event.ID>()
+    let logicalClock = {|
+        Sent = SortedDictionary<Address, uint64<sent events>>()
+        Received = SortedDictionary<Address, uint64<received events>>()
+    |}
 
-    member private self.ThrowIfErr<'e>(res) =
-        match res with
-        | Ok x -> x
-        | Error msg -> raise (ConstraintViolation<'e>(msg, self))
+    let readEventsInTxnOrder since = 
+        appendLog
+        |> Seq.skip (Checked.int since - 1) 
+        |> Seq.choose (flip Dict.getKeyValue events)
+
+    member private self.Assert(condition, msg) = 
+        if condition then
+            raise (ReplicaConstraintViolation(msg, self))
+
+    member private self.WriteEvents newEvents =
+        for (k, v: Event.Val<'payload>) in newEvents do
+            // Only add to the append log if the event does not already exist
+            if events.TryAdd(k, v) then
+                appendLog.Add k
+
+        self.Assert(events.Count > appendLog.Count, "Append log is too short")
+        self.Assert(events.Count < appendLog.Count, "Append log is too long")
     
-    interface IReplica<'e> with
+    interface IReplica<'payload> with
         member val Addr = addr
         member _.Read(query) = 
             match query.ByTime with
             | PhysicalValid -> 
-                db.Events |> Dict.toSeq |> Seq.take (int query.Limit)
+                events |> Dict.toSeq |> Seq.take (int query.Limit)
             | LogicalTxn ->
                 let since = (uint64 query.Limit) * 1UL<sent events>
-                db.ReadEventsInTxnOrder(since)
+                readEventsInTxnOrder since
 
         member _.Debug() = Some {
-            AppendLog = db.AppendLog
-            LogicalClock = db.LogicalClock.View()
+            AppendLog = appendLog
+            LogicalClock = logicalClock.Sent.Join(
+                logicalClock.Received, 
+                (fun kvp -> kvp.Key),
+                (fun kvp -> kvp.Key),
+                (fun sent received -> 
+                    (sent.Key, sent.Value, received.Value)))
         }
 
-        member self.Recv (msg: Message<'e>) =
+        member self.Recv (msg: Message<'payload>) =
             match msg with
             | Sync destAddr ->
-                let since = db.ReadEventCountFrom destAddr
-                let events = db.ReadEventsInTxnOrder since
-                let lc = db.ReadEventCount()
-                let storeMsg = Store (List.ofSeq events, (addr, lc))
-                sendMsg destAddr storeMsg
-            | Store (events, from) ->
+                let events = 
+                    logicalClock.Sent
+                    |> Dict.getOrDefault destAddr 0UL<events sent>
+                    |> readEventsInTxnOrder
+                    |> Seq.toList
+
+                let lc = Checked.uint64 appendLog.Count * 1UL<events received>
+                Store(events, (addr, lc)) |> sendMsg destAddr
+            | Store (events, (addr, numEventsReceived)) ->
                 // If from another replica, update logical clock to reflect this
-                db.UpdateLogicalClock from
-                db.WriteEvents events |> self.ThrowIfErr
+                logicalClock.Received[addr] <- numEventsReceived
+                self.WriteEvents events
             | StoreNew idPayloadPairs ->
                 let toEvents (id, payload) = (id, Event.newVal addr payload)
                 idPayloadPairs
                 |> List.map toEvents
-                |> db.WriteEvents
-                |> self.ThrowIfErr
+                |> self.WriteEvents
