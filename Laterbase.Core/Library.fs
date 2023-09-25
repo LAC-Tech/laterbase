@@ -190,12 +190,10 @@ type Database<'payload>() =
     - limit (maximum number of events to return)
 *)
 
-
 type Time = PhysicalValid | LogicalTxn
 
 type ReadQuery = {
     ByTime: Time
-    //SortOrder: Sort.Order
     Limit: byte // maximum number of events to return
 }
 
@@ -238,14 +236,12 @@ type LocalReplica<'e>(addr, sendMsg) =
                 let since = db.ReadEventCountFrom destAddr
                 let events = db.ReadEventsInTxnOrder since
                 let lc = db.ReadEventCount()
-                Store (List.ofSeq events, (addr, lc))
-                |> sendMsg destAddr
+                let storeMsg = Store (List.ofSeq events, (addr, lc))
+                sendMsg destAddr storeMsg
             | Store (events, from) ->
                 // If from another replica, update logical clock to reflect this
                 db.UpdateLogicalClock from
                 db.WriteEvents events
-            | StoreNew newEvents ->
-                newEvents
-                |> List.map (fun (id, payload) -> 
-                    (id, Event.newVal addr payload))
-                |> db.WriteEvents
+            | StoreNew idPayloadPairs ->
+                let toEvents (id, payload) = (id, Event.newVal addr payload)
+                idPayloadPairs |> List.map toEvents |> db.WriteEvents

@@ -187,7 +187,7 @@ test
         rA1.Recv (Sync rC1.Addr)
 
         // a . (b . c)
-        rC2.Recv (Sync rB2.Addr) 
+        rC2.Recv (Sync rB2.Addr)
         rB2.Recv (Sync rA2.Addr)
 
         replicasConverged rC1 rA2
