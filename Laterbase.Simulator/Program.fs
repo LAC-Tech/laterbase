@@ -78,7 +78,7 @@ let mainLoop () =
 
     loop ()
 
-type ReplicaInspector(replica: IReplica<'e>) =
+type ReplicaInspector<'e>(replica: IReplica<'e>) =
     inherit Window(
         "Laterbase Inspector",
         X = 0,
@@ -169,20 +169,22 @@ let main args =
 
     let rng = Random seed
 
-    let replicas = Simulated.Replicas [|randAddr rng; randAddr rng|];
-    replicas[0].Recv (StoreNew [
+    let addr = randAddr rng
+
+    printfn $"address = {addr}"
+
+    let replicas = Simulated.Replicas [|addr|];
+
+    let newEvents = [
         Event.ID.Generate(), "Monday"; 
         Event.ID.Generate(), "Tuesday"
-    ])
+    ]
 
-    for e in replicas[0].Read({ByTime = PhysicalValid; Limit = 0uy}) do
-        printfn $"{e}"
-
+    replicas[0].Recv (StoreNew newEvents)    
     
-    (*
     Application.Init()
 
-    let inspector = new ReplicaInspector(replicas[0])
+    let inspector = new ReplicaInspector<string>(replicas[0])
     // TODO: there should be some standard keypress to stop this?
     Application.Top.add_KeyPress(fun args ->
         match args.KeyEvent.Key with
@@ -193,7 +195,6 @@ let main args =
     Application.Top.Add (inspector)
     Application.Run()
     Application.Shutdown()
-    *)
 
     0
 

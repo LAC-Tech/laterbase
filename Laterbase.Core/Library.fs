@@ -196,7 +196,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
         member _.Read(query) =
             match query.ByTime with
             | PhysicalValid ->
-                events |> Dict.toSeq |> Seq.take (int query.Limit)
+                events |> Dict.toSeq |> Seq.skip (int query.Limit)
             | LogicalTxn ->
                 let since = (uint64 query.Limit) * 1UL<sent events>
                 readEventsInTxnOrder since

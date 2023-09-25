@@ -75,8 +75,14 @@ let threeTestReplicas (addr1, addr2, addr3) =
 
 let replicasConverged (r1: IReplica<'e>) (r2: IReplica<'e>) =
     let query = {ByTime = PhysicalValid; Limit = 0uy}
-    let es1 = r1.Read(query)
-    let es2 = r2.Read(query)
+    let es1 = r1.Read(query) |> Seq.toList
+    printfn $"es1 = {es1}"
+    let es1 = r1.Read(query) |> Seq.map (fun (k, v) -> (k, v.Payload))
+
+    let es2 = r1.Read(query) |> Seq.toList
+    printfn $"es2 = {es2}"
+    let es2 = r2.Read(query) |> Seq.map (fun (k, v) -> (k, v.Payload))
+
     Seq.equal es1 es2
 
 test 
