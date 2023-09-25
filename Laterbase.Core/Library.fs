@@ -96,23 +96,12 @@ type Message<'payload> =
 type LogicalClock() =
     // Double sided counter so we can just send single counters across the network
     // TODO save some space and just store the difference?
-    member val internal Sent = 
+    member val Sent = 
         SortedDictionary<Address, uint64<sent events>>()
-    member val internal Received = 
-        SortedDictionary<Address, uint64<received events>>()  
+    member val Received = 
+        SortedDictionary<Address, uint64<received events>>()
 
-    member self.EventsReceivedFrom addr = 
-        Dict.getOrDefault addr 0UL<received events> self.Received
-    
-    member self.EventsSentFrom addr = 
-        Dict.getOrDefault addr 0UL<sent events> self.Sent
-
-    member self.AddReceived(addr: Address, counter: uint64<received events>) =
-        self.Received[addr] <- counter
-
-    member self.AddSent(addr: Address, counter: uint64<sent events>) =
-        self.Sent[addr] <- counter
-
+    // TODO: move out of here
     member self.View() =
         let dt = new Data.DataTable()
         dt.Columns.Add "Address" |> ignore
@@ -158,11 +147,11 @@ type Database<'payload>() =
         |> Seq.choose (flip Dict.getKeyValue self.Events)
 
     member self.ReadEventCountFrom(destAddr) = 
-        self.LogicalClock.EventsSentFrom destAddr
+        Dict.getOrDefault destAddr 0UL<events sent> self.LogicalClock.Sent 
 
-    /// TODO: better name
-    /// TODO: what's the point of having a logical clock object? 
-    member self.UpdateLogicalClock = self.LogicalClock.AddReceived
+    /// TODO: better name? 
+    member self.UpdateLogicalClock(addr, numEventsReceived) = 
+        self.LogicalClock.Received[addr] <- numEventsReceived
 
     member self.WriteEvents newEvents =
         for (k, v) in newEvents do
