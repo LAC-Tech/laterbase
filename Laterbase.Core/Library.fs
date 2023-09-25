@@ -154,7 +154,7 @@ type IReplica<'e> =
     abstract member Debug: unit -> Replica.DebugView option
     /// Replicas *receive* a message that is *sent* across some medium
     abstract member Recv: Message<'e> -> unit
-    
+
 /// These are for errors I consider to be un-recoverable.
 /// So, why not use an assertion?
 /// - Wanted them to crash the program in both prod and dev. (Oppa Tiger Style)
@@ -217,7 +217,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
                     logicalClock.Sent
                     |> Dict.getOrDefault destAddr 0UL<events sent>
                     |> readEventsInTxnOrder
-                    |> Seq.filter (fun (k, v) -> v.Origin <> addr)
+                    //|> Seq.filter (fun (k, v) -> v.Origin <> addr)
                     |> Seq.toList
                 let numEventsReceived = 
                     Checked.uint64 appendLog.Count * 1UL<events received>
@@ -228,7 +228,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 // If from another replica, update logical clock to reflect this
                 logicalClock.Received[addr] <- numEventsReceived
                 for (k, v) in events do
-                    self.CrashIf(v.Origin = addr, "Storing redundant events")
+                    //self.CrashIf(v.Origin = addr, "Storing redundant events")
                     addEvent(k, v)
                 self.CheckAppendLog()
             
