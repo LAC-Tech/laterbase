@@ -154,9 +154,7 @@ type IReplica<'e> =
     abstract member Debug: unit -> Replica.DebugView option
     /// Replicas *receive* a message that is *sent* across some medium
     abstract member Recv: Message<'e> -> unit
-
-exception MyError of string
-
+    
 /// These are for errors I consider to be un-recoverable.
 /// So, why not use an assertion?
 /// - Wanted them to crash the program in both prod and dev. (Oppa Tiger Style)
@@ -185,13 +183,13 @@ type LocalReplica<'payload>(addr, sendMsg) =
     // Only add to the append log if the event does not already exist
     let addEvent (k, v) = if events.TryAdd(k, v) then appendLog.Add k
 
-    member private self.Assert(condition, msg) =
+    member private self.CrashIf(condition, msg) =
         if condition then
             raise (ReplicaConstraintViolation(msg, self))
 
     member private self.CheckAppendLog() =
-        self.Assert(events.Count > appendLog.Count, "Append log is too short")
-        self.Assert(events.Count < appendLog.Count, "Append log is too long")
+        self.CrashIf(events.Count > appendLog.Count, "Append log is too short")
+        self.CrashIf(events.Count < appendLog.Count, "Append log is too long")
     
     interface IReplica<'payload> with
         member val Addr = addr
@@ -223,13 +221,14 @@ type LocalReplica<'payload>(addr, sendMsg) =
                     |> Seq.toList
                 let numEventsReceived = 
                     Checked.uint64 appendLog.Count * 1UL<events received>
-                Store(events, (addr, numEventsReceived)) |> sendMsg destAddr
+                let storeMsg = Store(events, (addr, numEventsReceived))
+                sendMsg destAddr storeMsg
             
             | Store (events, (addr, numEventsReceived)) ->
                 // If from another replica, update logical clock to reflect this
                 logicalClock.Received[addr] <- numEventsReceived
                 for (k, v) in events do
-                    self.Assert(v.Origin = addr, "Storing redundant events")
+                    self.CrashIf(v.Origin = addr, "Storing redundant events")
                     addEvent(k, v)
                 self.CheckAppendLog()
             
