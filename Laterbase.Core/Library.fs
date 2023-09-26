@@ -1,4 +1,5 @@
-﻿module Laterbase.Core
+﻿
+module Laterbase.Core
 
 open System
 open System.Collections.Generic
@@ -145,13 +146,18 @@ module Replica =
             (Address * uint64<events sent> * uint64<events received>) seq
     }
 
+    type View<'payload> = {
+        Events: (Event.ID * Address * 'payload) seq
+        Debug: DebugView option
+    }
+
 /// This is meant to be used by client code.
 /// Think pouchDBs db class, where whether it's local or remote is abstracted
 /// TODO: return Tasks
 type IReplica<'e> =
     abstract member Addr: Address
     abstract member Read: query: ReadQuery -> Event.Stream<'e>
-    abstract member Debug: unit -> Replica.DebugView option
+    abstract member View: unit -> Replica.View<'e>
     /// Replicas *receive* a message that is *sent* across some medium
     abstract member Recv: Message<'e> -> unit
 
@@ -201,14 +207,23 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 let since = (uint64 query.Limit) * 1UL<sent events>
                 readEventsInTxnOrder since
 
-        member _.Debug() = Some {
-            AppendLog = appendLog
-            LogicalClock = logicalClock.Sent.Join(
-                logicalClock.Received,
-                (fun kvp -> kvp.Key),
-                (fun kvp -> kvp.Key),
-                (fun sent received -> (sent.Key, sent.Value, received.Value)))
-        }
+        member self.View() =
+            let events = 
+                (self :> IReplica<'payload>).Read({ByTime = PhysicalValid; Limit = 0uy})
+                |> Seq.map (fun (k, v) -> (k, v.Origin, v.Payload))
+
+            {
+                Events = events
+                Debug = Some {
+                    AppendLog = appendLog
+                    LogicalClock = logicalClock.Sent.Join(
+                        logicalClock.Received,
+                        (fun kvp -> kvp.Key),
+                        (fun kvp -> kvp.Key),
+                        (fun sent received -> 
+                            (sent.Key, sent.Value, received.Value)))
+                }
+            }
 
         member self.Recv (msg: Message<'payload>) =
             match msg with

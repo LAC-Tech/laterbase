@@ -30,18 +30,17 @@ let main args =
 
     let addr = randAddr rng
 
-    printfn $"address = {addr}"
-
     let replicas = Simulated.Replicas [|addr|];
 
+    // TODO: these IDs are not deterministc, use newId
     let newEvents = [
         Event.ID.Generate(), "Monday"; 
         Event.ID.Generate(), "Tuesday"
     ]
 
-    replicas[0].Recv (StoreNew newEvents)    
+    replicas[0].Recv (StoreNew newEvents)
     
-    let inspector = new Inspect.Replica<string>(replicas[0])
+    Inspect.replica(replicas)
 
     0
 

@@ -1,34 +1,29 @@
-﻿namespace Laterbase.Inspect
+﻿module Laterbase.Inspect
 
 open System
 open Terminal.Gui
 open Laterbase.Core
 
-type Replica<'e>(replica: IReplica<'e>) =
-    inherit Window(
-        "Laterbase Inspector",
+type private Replica<'e>(replica: IReplica<'e>) =
+    inherit TabView(
         X = 0,
-        Y = 0,
+        Y = Pos.Percent(50.0f),
         Width = Dim.Fill(),
         Height = Dim.Fill()
     )
 
     do 
-        let events = replica.Read({ByTime = PhysicalValid; Limit = 0uy})
+        let view = replica.View()
 
-        let tabs = new TabView(
-            X = 0,
-            Y = 0,
-            Width = Dim.Fill(),
-            Height = Dim.Fill()
-        )
+        let events = view.Events
 
         let eventsDt = new Data.DataTable()
         eventsDt.Columns.Add "ID" |> ignore
-        eventsDt.Columns.Add "Value" |> ignore
+        eventsDt.Columns.Add "Origin" |> ignore
+        eventsDt.Columns.Add "Payload" |> ignore
 
-        for (k, v) in events do
-            eventsDt.Rows.Add(k, v) |> ignore
+        for (k, origin, payload) in events do
+            eventsDt.Rows.Add(k, origin, payload) |> ignore
 
         let eventsView = new TableView(
             X = 0,
@@ -38,9 +33,11 @@ type Replica<'e>(replica: IReplica<'e>) =
             Table = eventsDt
         )
 
-        tabs.AddTab(TabView.Tab("Events", eventsView), true)
+        base.AddTab(TabView.Tab("Events", eventsView), true)
 
-        replica.Debug() |> Option.iter (fun viewData ->
+
+        match view.Debug with
+        | Some (viewData) -> 
             let appendLogView = new ListView(
                 viewData.AppendLog |> Seq.toArray,
                 X = 0,
@@ -64,8 +61,48 @@ type Replica<'e>(replica: IReplica<'e>) =
                 Height = Dim.Fill()
             )
 
-            tabs.AddTab(TabView.Tab("AppendLog", appendLogView), false)
-            tabs.AddTab(TabView.Tab("LogicalClock", logicalClockView), false)
+            base.AddTab(TabView.Tab("AppendLog", appendLogView), false)
+            base.AddTab(TabView.Tab("LogicalClock", logicalClockView), false)
+        | _ -> ()
+
+let runView (createViewArray: unit -> View) =
+    Application.Init()
+
+    let vs = createViewArray ()
+    Application.Top.Add(vs)
+    Application.Run()
+    // This will not be reached on watch mode.
+    // Make sure to always quit with Ctrl-Q before re-running.
+    Application.Shutdown()
+
+let replica (rs: IReplica<'e> array) =
+    runView (fun () -> 
+        let addresses = rs |> Array.map (fun r -> r.Addr)
+
+        let replicaList = new FrameView(
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Percent(50.0f)
         )
 
-        base.Add tabs
+        replicaList.Add(new ListView(
+            addresses,
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill()
+        ))
+
+        let window = new Window(
+            "Replica Inspector",
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill()
+        )
+
+        window.Add(replicaList, new Replica<'e>(rs[0]))
+        window
+    )
+    
