@@ -34,6 +34,11 @@ let config = {
     Config.Quick with Arbitrary = [ typeof<MyGenerators> ]
 }
 
+let openInspector rs =
+    printfn "error - open inspector? (y/n)"
+    let k = Console.ReadKey()
+    if k.KeyChar = 'y' then Inspect.replicas rs
+
 let test descr testFn =
     printfn "# %A" descr
     Check.One(config, testFn)
@@ -78,7 +83,12 @@ let replicasConverged (r1: IReplica<'e>) (r2: IReplica<'e>) =
     let es1 = r1.Read(query) |> Seq.map (fun (k, v) -> (k, v.Payload))
     let es2 = r2.Read(query) |> Seq.map (fun (k, v) -> (k, v.Payload))
 
-    Seq.equal es1 es2
+    if Seq.equal es1 es2 then 
+        true
+    else
+        openInspector [|r1; r2|]
+
+        false
 
 test 
     "two databases will have the same events if they sync with each other"

@@ -77,7 +77,7 @@ let runView (createViewArray: unit -> View) =
     // Make sure to always quit with Ctrl-Q before re-running.
     Application.Shutdown()
 
-let replica (rs: IReplica<'e> array) =
+let replicas (rs: IReplica<'e> array) =
     runView (fun () -> 
         let addresses = rs |> Array.map (fun r -> r.Addr)
 

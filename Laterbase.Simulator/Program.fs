@@ -40,7 +40,7 @@ let main args =
 
     replicas[0].Recv (StoreNew newEvents)
     
-    Inspect.replica(replicas)
+    Inspect.replicas(replicas)
 
     0
 

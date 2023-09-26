@@ -232,7 +232,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
                     logicalClock.Sent
                     |> Dict.getOrDefault destAddr 0UL<events sent>
                     |> readEventsInTxnOrder
-                    //|> Seq.filter (fun (k, v) -> v.Origin <> addr)
+                    //|> Seq.filter (fun (k, v) -> v.Origin <> destAddr)
                     |> Seq.toList
                 let numEventsReceived = 
                     Checked.uint64 appendLog.Count * 1UL<events received>
