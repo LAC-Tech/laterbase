@@ -9,7 +9,7 @@ open Laterbase.Core
 type private Replica<'e>(replica: IReplica<'e>) =
     inherit TabView(
         X = 0,
-        Y = Pos.Percent(50.0f),
+        Y = 0,
         Width = Dim.Fill(),
         Height = Dim.Fill()
     )
@@ -81,13 +81,22 @@ let replicas (rs: IReplica<'e> array) =
     runView (fun () -> 
         let addresses = rs |> Array.map (fun r -> r.Addr)
 
+        let replicaListFrame = new FrameView(
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Percent(40.0f)
+        )
+
         let replicaList = new ListView(
             addresses,
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Percent(50.0f)
+            Height = Dim.Fill()
         )
+
+        replicaListFrame.Add replicaList
 
         let window = new Window(
             "Replica Inspector",
@@ -97,13 +106,22 @@ let replicas (rs: IReplica<'e> array) =
             Height = Dim.Fill()
         )
 
+        let replicaFrame = new FrameView(
+            X = 0,
+            Y = Pos.Percent(40.0f),
+            Width = Dim.Fill(),
+            Height = Dim.Percent(60.0f)
+        )
+
+        replicaFrame.Add (new Replica<'e>(rs[0]))
+
         replicaList.add_SelectedItemChanged(fun args ->
             let addr = args.Value :?> Address
             let replica = rs |> Array.find (fun r -> r.Addr = addr)
-            window.Add (new Replica<'e>(replica))
+            replicaFrame.Add (new Replica<'e>(replica))
         )
 
-        window.Add(replicaList, new Replica<'e>(rs[0]))
+        window.Add(replicaListFrame, replicaFrame)
         window
     )
     

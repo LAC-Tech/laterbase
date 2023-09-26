@@ -13,6 +13,10 @@ let randAddr (rng: Random) =
     rng.NextBytes bytes
     Address bytes
 
+let runSimulator () =
+    for t in 0L<ms> .. 10L<ms> .. (1000L<s> * msPerS)   do
+        printfn "%A miliseconds elapsed" t
+
 [<EntryPoint>]
 let main args =
     // Can replay with a given seed if one is provided
@@ -22,7 +26,7 @@ let main args =
         | [|s|] -> 
             try
                 int s
-            with | :? System.FormatException ->
+            with | :? FormatException ->
                 failwithf "First argument %A was not an integer" s
         | _ -> failwith "too many args"
 
@@ -45,6 +49,5 @@ let main args =
     0
 
 (*
-    for t in 0L<Time.ms> .. 10L<Time.ms> .. Time.s do
-        printfn "%A miliseconds elapsed" t
+    
 *)

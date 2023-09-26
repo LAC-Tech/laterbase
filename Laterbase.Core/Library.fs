@@ -36,8 +36,8 @@ module Dict =
 /// When an event happened in the domain
 [<Measure>] type valid
 
-open FSharp.Data.UnitSystems.SI.UnitSymbols
 [<Measure>] type ms
+[<Measure>] type s = Data.UnitSystems.SI.UnitSymbols.s
 [<Measure>] type m
 [<Measure>] type h
 // Using signed ints for this to match .NET stdlib
