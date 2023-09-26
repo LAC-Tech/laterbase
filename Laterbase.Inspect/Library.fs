@@ -4,6 +4,8 @@ open System
 open Terminal.Gui
 open Laterbase.Core
 
+
+
 type private Replica<'e>(replica: IReplica<'e>) =
     inherit TabView(
         X = 0,
@@ -14,13 +16,12 @@ type private Replica<'e>(replica: IReplica<'e>) =
 
     do 
         let view = replica.View()
-
         let events = view.Events
 
         let eventsDt = new Data.DataTable()
-        eventsDt.Columns.Add "ID" |> ignore
-        eventsDt.Columns.Add "Origin" |> ignore
-        eventsDt.Columns.Add "Payload" |> ignore
+
+        for colName in ["ID"; "Origin"; "Payload"] do
+            eventsDt.Columns.Add colName |> ignore
 
         for (k, origin, payload) in events do
             eventsDt.Rows.Add(k, origin, payload) |> ignore
@@ -47,9 +48,10 @@ type private Replica<'e>(replica: IReplica<'e>) =
             )
 
             let logicalClockDt = new Data.DataTable()
-            logicalClockDt.Columns.Add "Address" |> ignore
-            logicalClockDt.Columns.Add "Sent" |> ignore
-            logicalClockDt.Columns.Add "Received" |> ignore
+
+            for colName in [|"Address"; "Sent"; "Received"|] do
+                logicalClockDt.Columns.Add colName |> ignore
+            
             for (addr, sent, received) in viewData.LogicalClock do
                 logicalClockDt.Rows.Add(addr, sent, received) |> ignore
 
@@ -79,20 +81,13 @@ let replica (rs: IReplica<'e> array) =
     runView (fun () -> 
         let addresses = rs |> Array.map (fun r -> r.Addr)
 
-        let replicaList = new FrameView(
+        let replicaList = new ListView(
+            addresses,
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
             Height = Dim.Percent(50.0f)
         )
-
-        replicaList.Add(new ListView(
-            addresses,
-            X = 0,
-            Y = 0,
-            Width = Dim.Fill(),
-            Height = Dim.Fill()
-        ))
 
         let window = new Window(
             "Replica Inspector",
@@ -100,6 +95,12 @@ let replica (rs: IReplica<'e> array) =
             Y = 0,
             Width = Dim.Fill(),
             Height = Dim.Fill()
+        )
+
+        replicaList.add_SelectedItemChanged(fun args ->
+            let addr = args.Value :?> Address
+            let replica = rs |> Array.find (fun r -> r.Addr = addr)
+            window.Add (new Replica<'e>(replica))
         )
 
         window.Add(replicaList, new Replica<'e>(rs[0]))

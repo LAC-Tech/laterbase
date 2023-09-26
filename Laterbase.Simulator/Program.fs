@@ -28,9 +28,9 @@ let main args =
 
     let rng = Random seed
 
-    let addr = randAddr rng
+    let (addr1, addr2) = (randAddr rng, randAddr rng)
 
-    let replicas = Simulated.Replicas [|addr|];
+    let replicas = Simulated.Replicas [|addr1; addr2|];
 
     // TODO: these IDs are not deterministc, use newId
     let newEvents = [
