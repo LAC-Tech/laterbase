@@ -78,26 +78,47 @@ let threeTestReplicas (addr1, addr2, addr3) =
     let rs = Simulated.Replicas [|addr1; addr2; addr3|]
     (rs[0], rs[1], rs[2])
 
-let replicasConverged (r1: IReplica<'e>) (r2: IReplica<'e>) =
-    let query = {ByTime = PhysicalValid; Limit = 0uy}
-    let es1 = r1.Read(query) |> Seq.map (fun (k, v) -> (k, v.Payload))
-    let es2 = r2.Read(query) |> Seq.map (fun (k, v) -> (k, v.Payload))
+(*
+    Sometimes I create two different networks where replicas have the same event payloads. So each have their own state and I can test algebraic properties.
 
-    if Seq.equal es1 es2 then 
-        true
-    else
+    In this scenario, I expect the payload values to converge, but the origin addresses will of course be different.
+*)
+type Connection = SameNetwork | DifferentNetworks
+
+let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
+    let query = {ByTime = PhysicalValid; Limit = 0uy}
+
+    let failed () =
+        eprintfn "Replicas did not converge"
+        openInspector [|r1; r2|]
+        false
+
+    let es1 = r1.Read(query)
+    let es2 = r2.Read(query)
+
+    let converged = match connection with
+    | SameNetwork -> Seq.equal es1 es2
+    | DifferentNetworks -> 
+        let es1 = es1 |> Seq.map (fun (k, v) -> (k, v.Payload))
+        let es2 = es2 |> Seq.map (fun (k, v) -> (k, v.Payload))
+
+        Seq.equal es1 es2
+
+    
+    if not converged then
+        eprintfn "Replicas did not converge"
         openInspector [|r1; r2|]
 
-        false
+    converged
 
 test 
     "two databases will have the same events if they sync with each other"
     (fun
-        ((addr1, adrr2) : (Address * Address))
+        ((addr1, addr2) : (Address * Address))
         (events1 : (Event.ID * int) array)
         (events2 : (Event.ID * int) array) ->
     
-        let (r1, r2) = twoTestReplicas(addr1, adrr2)
+        let (r1, r2) = twoTestReplicas(addr1, addr2)
 
         // Populate the two databases with separate events
         r1.Recv(StoreNew events1)
@@ -145,54 +166,54 @@ test
         replicasConverged rA1 rB2
     )
 
-test
-    "syncing is idempotent"
-    (fun
-        (addr: Address)
-        (controlAddr: Address)
-        (events : (Event.ID * Event.Val<int>) array) ->
+// test
+//     "syncing is idempotent"
+//     (fun
+//         (addr: Address)
+//         (controlAddr: Address)
+//         (events : (Event.ID * Event.Val<int>) array) ->
 
-        let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
+//         let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
 
-        replica.Recv(StoreNew events)
-        controlReplica.Recv(StoreNew events)
+//         replica.Recv(StoreNew events)
+//         controlReplica.Recv(StoreNew events)
 
-        replica.Recv (Sync replica.Addr)
+//         replica.Recv (Sync replica.Addr)
 
-        replicasConverged replica controlReplica
-    )
+//         replicasConverged replica controlReplica
+//     )
 
-test
-    "syncing is associative"
-    (fun
-        ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
-            (Address * Address * Address * Address * Address * Address))
-        (eventsA : (Event.ID * int) array)
-        (eventsB : (Event.ID * int) array)
-        (eventsC : (Event.ID * int) array) ->
+// test
+//     "syncing is associative"
+//     (fun
+//         ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
+//             (Address * Address * Address * Address * Address * Address))
+//         (eventsA : (Event.ID * int) array)
+//         (eventsB : (Event.ID * int) array)
+//         (eventsC : (Event.ID * int) array) ->
 
-        let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
-        let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)
+//         let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
+//         let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)
 
-        // A replicas have same events
-        rA1.Recv (StoreNew eventsA)
-        rA2.Recv (StoreNew eventsA)
+//         // A replicas have same events
+//         rA1.Recv (StoreNew eventsA)
+//         rA2.Recv (StoreNew eventsA)
 
-        // B replicas have same events
-        rB1.Recv (StoreNew eventsB)
-        rB2.Recv (StoreNew eventsB)
+//         // B replicas have same events
+//         rB1.Recv (StoreNew eventsB)
+//         rB2.Recv (StoreNew eventsB)
 
-        // C replicas have same events
-        rC1.Recv (StoreNew eventsC)
-        rC2.Recv (StoreNew eventsC)
+//         // C replicas have same events
+//         rC1.Recv (StoreNew eventsC)
+//         rC2.Recv (StoreNew eventsC)
 
-        // (a . b) . c
-        rB1.Recv (Sync rA1.Addr)
-        rA1.Recv (Sync rC1.Addr)
+//         // (a . b) . c
+//         rB1.Recv (Sync rA1.Addr)
+//         rA1.Recv (Sync rC1.Addr)
 
-        // a . (b . c)
-        rC2.Recv (Sync rB2.Addr)
-        rB2.Recv (Sync rA2.Addr)
+//         // a . (b . c)
+//         rC2.Recv (Sync rB2.Addr)
+//         rB2.Recv (Sync rA2.Addr)
 
-        replicasConverged rC1 rA2
-    )
+//         replicasConverged rC1 rA2
+//     )

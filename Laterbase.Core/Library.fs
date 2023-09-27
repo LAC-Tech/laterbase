@@ -58,10 +58,9 @@ let mPerH: int64<m/h> = 60L<m/h>
 /// Keeping it as a dumb data type so it's easy to send across a network
 [<Struct; IsReadOnly>]
 type Address(id: byte array) =
-    member _.Id = id
     // Hex string for compactness
     override this.ToString() = 
-        this.Id
+        id
         |> Array.map (fun b -> b.ToString("X2"))
         |> String.concat ""
 
@@ -257,7 +256,8 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 self.CheckAppendLog()
             
             | StoreNew idPayloadPairs ->
-                let toEvents (id, payload) = (id, Event.newVal addr payload)
+                let toEvents (id, payload) = 
+                    (id, Event.newVal addr payload)
                 let events = Array.map toEvents idPayloadPairs
                 Seq.iter addEvent events
                 self.CheckAppendLog()

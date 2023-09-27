@@ -11,7 +11,8 @@ open Laterbase.Core
 let Replicas<'e> addrs =
     let network = ResizeArray<IReplica<'e>>()
     let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
-    let addrToReplica addr = LocalReplica(addr, sendMsg) :> IReplica<'e>
-    let rs = Array.map addrToReplica addrs
-    network.AddRange(rs)
-    rs
+    let replicas = 
+        addrs |>
+        Array.map (fun addr -> LocalReplica(addr, sendMsg) :> IReplica<'e>) 
+    network.AddRange(replicas)
+    replicas
