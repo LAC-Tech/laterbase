@@ -120,5 +120,4 @@ let replicas (rs: IReplica<'e> array) =
 
         window.Add(replicaListFrame, replicaFrame)
         window
-    )
-    
+    )   

@@ -96,14 +96,14 @@ let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
     let es1 = r1.Read(query)
     let es2 = r2.Read(query)
 
-    let converged = match connection with
-    | SameNetwork -> Seq.equal es1 es2
-    | DifferentNetworks -> 
-        let es1 = es1 |> Seq.map (fun (k, v) -> (k, v.Payload))
-        let es2 = es2 |> Seq.map (fun (k, v) -> (k, v.Payload))
+    let converged =
+        match connection with
+        | SameNetwork -> Seq.equal es1 es2
+        | DifferentNetworks -> 
+            let es1 = es1 |> Seq.map (fun (k, v) -> (k, v.Payload))
+            let es2 = es2 |> Seq.map (fun (k, v) -> (k, v.Payload))
 
-        Seq.equal es1 es2
-
+            Seq.equal es1 es2
     
     if not converged then
         eprintfn "Replicas did not converge"
@@ -128,7 +128,7 @@ test
         r1.Recv(Sync r2.Addr)
         r2.Recv(Sync r1.Addr)
 
-        replicasConverged r1 r2        
+        replicasConverged SameNetwork r1 r2        
     )
 
 (*
@@ -163,57 +163,57 @@ test
         rB1.Recv(Sync rA1.Addr)
         rA2.Recv(Sync rB2.Addr)
 
-        replicasConverged rA1 rB2
+        replicasConverged DifferentNetworks rA1 rB2
     )
 
-// test
-//     "syncing is idempotent"
-//     (fun
-//         (addr: Address)
-//         (controlAddr: Address)
-//         (events : (Event.ID * Event.Val<int>) array) ->
+test
+    "syncing is idempotent"
+    (fun
+        (addr: Address)
+        (controlAddr: Address)
+        (events : (Event.ID * Event.Val<int>) array) ->
 
-//         let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
+        let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
 
-//         replica.Recv(StoreNew events)
-//         controlReplica.Recv(StoreNew events)
+        replica.Recv(StoreNew events)
+        controlReplica.Recv(StoreNew events)
 
-//         replica.Recv (Sync replica.Addr)
+        replica.Recv (Sync replica.Addr)
 
-//         replicasConverged replica controlReplica
-//     )
+        replicasConverged DifferentNetworks replica controlReplica
+    )
 
-// test
-//     "syncing is associative"
-//     (fun
-//         ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
-//             (Address * Address * Address * Address * Address * Address))
-//         (eventsA : (Event.ID * int) array)
-//         (eventsB : (Event.ID * int) array)
-//         (eventsC : (Event.ID * int) array) ->
+test
+    "syncing is associative"
+    (fun
+        ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
+        (Address * Address * Address * Address * Address * Address))
+        (eventsA : (Event.ID * int) array)
+        (eventsB : (Event.ID * int) array)
+        (eventsC : (Event.ID * int) array) ->
 
-//         let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
-//         let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)
+        let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
+        let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)
 
-//         // A replicas have same events
-//         rA1.Recv (StoreNew eventsA)
-//         rA2.Recv (StoreNew eventsA)
+        // A replicas have same events
+        rA1.Recv (StoreNew eventsA)
+        rA2.Recv (StoreNew eventsA)
 
-//         // B replicas have same events
-//         rB1.Recv (StoreNew eventsB)
-//         rB2.Recv (StoreNew eventsB)
+        // B replicas have same events
+        rB1.Recv (StoreNew eventsB)
+        rB2.Recv (StoreNew eventsB)
 
-//         // C replicas have same events
-//         rC1.Recv (StoreNew eventsC)
-//         rC2.Recv (StoreNew eventsC)
+        // C replicas have same events
+        rC1.Recv (StoreNew eventsC)
+        rC2.Recv (StoreNew eventsC)
 
-//         // (a . b) . c
-//         rB1.Recv (Sync rA1.Addr)
-//         rA1.Recv (Sync rC1.Addr)
+        // (a . b) . c
+        rB1.Recv (Sync rA1.Addr)
+        rA1.Recv (Sync rC1.Addr)
 
-//         // a . (b . c)
-//         rC2.Recv (Sync rB2.Addr)
-//         rB2.Recv (Sync rA2.Addr)
+        // a . (b . c)
+        rC2.Recv (Sync rB2.Addr)
+        rB2.Recv (Sync rA2.Addr)
 
-//         replicasConverged rC1 rA2
-//     )
+        replicasConverged DifferentNetworks rC1 rA2
+    )
