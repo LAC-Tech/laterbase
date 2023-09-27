@@ -36,7 +36,7 @@ let config = {
 
 let openInspector rs =
     printfn "error - open inspector? (y/n)"
-    let k = Console.ReadKey()
+    let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas rs
 
 let test descr testFn =
@@ -46,7 +46,7 @@ let test descr testFn =
 
 test
     "Can read back the events you store"
-    (fun (inputEvents: (Event.ID * int64) list) (addr: Address) ->
+    (fun (inputEvents: (Event.ID * int64) array) (addr: Address) ->
         let r: IReplica<int64> = LocalReplica(addr, fun _ _ -> ())
         seq {
             for _ in 1..100 do
@@ -57,11 +57,11 @@ test
                 let outputEvents = 
                     outputEvents 
                     |> Seq.map (fun (k, v) -> (k, v.Payload))
-                    |> Seq.toList
+                    |> Seq.toArray
 
                 // Storage will not store duplicates
                 let inputEvents = 
-                    inputEvents |> List.distinctBy (fun (k, _) -> k) 
+                    inputEvents |> Array.distinctBy (fun (k, _) -> k) 
 
                 inputEvents = outputEvents
         }
@@ -94,8 +94,8 @@ test
     "two databases will have the same events if they sync with each other"
     (fun
         ((addr1, adrr2) : (Address * Address))
-        (events1 : (Event.ID * int) list)
-        (events2 : (Event.ID * int) list) ->
+        (events1 : (Event.ID * int) array)
+        (events2 : (Event.ID * int) array) ->
     
         let (r1, r2) = twoTestReplicas(addr1, adrr2)
 
@@ -124,8 +124,8 @@ test
     (fun
         ((addrA1, addrB1, addrA2, addrB2) : 
             (Address * Address * Address * Address))
-        (eventsA : (Event.ID * int) list)
-        (eventsB : (Event.ID * int) list) ->
+        (eventsA : (Event.ID * int) array)
+        (eventsB : (Event.ID * int) array) ->
 
         let (rA1, rB1) = twoTestReplicas(addrA1, addrB1)
         let (rA2, rB2) = twoTestReplicas(addrA2, addrB2)
@@ -150,7 +150,7 @@ test
     (fun
         (addr: Address)
         (controlAddr: Address)
-        (events : (Event.ID * Event.Val<int>) list) ->
+        (events : (Event.ID * Event.Val<int>) array) ->
 
         let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
 
@@ -167,9 +167,9 @@ test
     (fun
         ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
             (Address * Address * Address * Address * Address * Address))
-        (eventsA : (Event.ID * int) list)
-        (eventsB : (Event.ID * int) list)
-        (eventsC : (Event.ID * int) list) ->
+        (eventsA : (Event.ID * int) array)
+        (eventsB : (Event.ID * int) array)
+        (eventsC : (Event.ID * int) array) ->
 
         let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
         let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)

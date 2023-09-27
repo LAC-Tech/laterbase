@@ -4,8 +4,6 @@ open System
 open Terminal.Gui
 open Laterbase.Core
 
-
-
 type private Replica<'e>(replica: IReplica<'e>) =
     inherit TabView(
         X = 0,
@@ -35,7 +33,6 @@ type private Replica<'e>(replica: IReplica<'e>) =
         )
 
         base.AddTab(TabView.Tab("Events", eventsView), true)
-
 
         match view.Debug with
         | Some (viewData) -> 
@@ -85,7 +82,7 @@ let replicas (rs: IReplica<'e> array) =
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
-            Height = Dim.Percent(40.0f)
+            Height = Dim.Percent(25.0f)
         )
 
         let replicaList = new ListView(
@@ -108,9 +105,9 @@ let replicas (rs: IReplica<'e> array) =
 
         let replicaFrame = new FrameView(
             X = 0,
-            Y = Pos.Percent(40.0f),
+            Y = Pos.Percent(25.0f),
             Width = Dim.Fill(),
-            Height = Dim.Percent(60.0f)
+            Height = Dim.Percent(75.0f)
         )
 
         replicaFrame.Add (new Replica<'e>(rs[0]))

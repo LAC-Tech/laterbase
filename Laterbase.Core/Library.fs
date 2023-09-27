@@ -1,4 +1,9 @@
-﻿
+﻿/// Deterministic Core of Laterbase
+/// The following is strictly forbidden:
+/// - RNG calls
+/// - System Time calls
+/// - Hashmaps
+/// - Multi-threading
 module Laterbase.Core
 
 open System
@@ -70,8 +75,8 @@ module Event =
     /// TODO: make sure the timestamp is not greater than current time.
     type ID = Ulid
 
-    let newId (timestamp: int64<valid ms>) (randomness: byte array) =
-        Ulid(int64 timestamp, randomness)
+    let newId (timestamp: int64<valid ms>) (tenRandomBytes: byte array) =
+        Ulid(int64 timestamp, tenRandomBytes)
 
     [<Struct; IsReadOnly>]
     type Val<'payload> = {Origin: Address; Payload: 'payload}
@@ -85,9 +90,9 @@ module Event =
 type Message<'payload> =
     | Sync of destAddr: Address
     | Store of 
-        events: (Event.ID * Event.Val<'payload>) list *
+        events: (Event.ID * Event.Val<'payload>) array *
         from: (Address * uint64<received events>)
-    | StoreNew of (Event.ID * 'payload) list
+    | StoreNew of (Event.ID * 'payload) array
 
 type LogicalClock() =
     // Double sided counter so we can just send single counters across the network
@@ -96,20 +101,6 @@ type LogicalClock() =
         SortedDictionary<Address, uint64<sent events>>()
     member val Received = 
         SortedDictionary<Address, uint64<received events>>()
-
-    // TODO: move out of here
-    member self.View() =
-        let dt = new Data.DataTable()
-        dt.Columns.Add "Address" |> ignore
-        dt.Columns.Add "Sent" |> ignore
-        dt.Columns.Add "Received" |> ignore
-
-        self.Sent.Join(
-            self.Received, 
-            (fun kvp -> kvp.Key),
-            (fun kvp -> kvp.Key),
-            (fun sent received -> 
-                (sent.Key, sent.Value, received.Value)))
 
     override self.ToString() =
         // Parker 1983 syntax
@@ -233,7 +224,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
                     |> Dict.getOrDefault destAddr 0UL<events sent>
                     |> readEventsInTxnOrder
                     //|> Seq.filter (fun (k, v) -> v.Origin <> destAddr)
-                    |> Seq.toList
+                    |> Seq.toArray
                 let numEventsReceived = 
                     Checked.uint64 appendLog.Count * 1UL<events received>
                 let storeMsg = Store(events, (addr, numEventsReceived))
@@ -249,6 +240,6 @@ type LocalReplica<'payload>(addr, sendMsg) =
             
             | StoreNew idPayloadPairs ->
                 let toEvents (id, payload) = (id, Event.newVal addr payload)
-                let events = List.map toEvents idPayloadPairs
+                let events = Array.map toEvents idPayloadPairs
                 Seq.iter addEvent events
                 self.CheckAppendLog()
