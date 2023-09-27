@@ -65,7 +65,7 @@ let main args =
 
     let rng = Random seed
 
-    printfn $"Seed = {seed}, Simulated Time = {simTime}"
+    printfn $"Seed = {seed}"
     printfn "Sticking it on the Laterbase...\n"
 
     let numReplicas = randInt rng Range.replicaCount
@@ -102,11 +102,10 @@ let main args =
     stopWatch.Stop()
     let ts = stopWatch.Elapsed
     printfn "Simulation is complete."
-    printfn $"Simulated time = {simTime}ms, Real time ={ts.Milliseconds}ms"
+    printfn $"Simulated time = {simTime}ms, Real time = {ts.Milliseconds}ms"
     printfn "View Replication Inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas replicas
-    Inspect.replicas(replicas)
 
     0
 
