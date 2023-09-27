@@ -48,7 +48,7 @@ type private Replica<'e>(replica: IReplica<'e>) =
 
             for colName in [|"Address"; "Sent"; "Received"|] do
                 logicalClockDt.Columns.Add colName |> ignore
-            
+
             for (addr, sent, received) in viewData.LogicalClock do
                 logicalClockDt.Rows.Add(addr, sent, received) |> ignore
 

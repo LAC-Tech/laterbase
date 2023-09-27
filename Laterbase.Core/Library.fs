@@ -160,6 +160,25 @@ type ReplicaConstraintViolation<'e> (reason: string, replica: IReplica<'e>) =
     inherit Exception (reason)
     member val Replica = replica
 
+/// Idea behind this is I don't have to send a logical clock across network
+/// If I store sent and received counts separately, replicas can remember.
+/// It made more sense when i thought of it... 
+type Counter = {
+    Sent: uint64<sent events>
+    Received: uint64<received events>
+}
+
+module Counter =
+    let zero = {
+        Sent = 0UL<sent events>
+        Received = 0UL<received events>
+    }
+
+    let updateReceived numEventsReceived = function
+    | Some counter -> { counter with Received = numEventsReceived }
+    | None -> { Sent = 0UL<sent events>; Received = numEventsReceived}
+
+
 type LocalReplica<'payload>(addr, sendMsg) =
     let events = SortedDictionary<Event.ID, Event.Val<'payload>>()
     (**
@@ -167,10 +186,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
         Should it be a jagged array with concurrent events stored together? 
     *)
     let appendLog = ResizeArray<Event.ID>()
-    let logicalClock = {|
-        Sent = SortedDictionary<Address, uint64<sent events>>()
-        Received = SortedDictionary<Address, uint64<received events>>()
-    |}
+    let logicalClock = SortedDictionary<Address, Counter>()
 
     let readEventsInTxnOrder since =
         appendLog
@@ -207,22 +223,20 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 Events = events
                 Debug = Some {
                     AppendLog = appendLog
-                    LogicalClock = logicalClock.Sent.Join(
-                        logicalClock.Received,
-                        (fun kvp -> kvp.Key),
-                        (fun kvp -> kvp.Key),
-                        (fun sent received -> 
-                            (sent.Key, sent.Value, received.Value)))
+                    LogicalClock = 
+                        logicalClock |> Seq.map(fun kvp -> 
+                            (kvp.Key, kvp.Value.Sent, kvp.Value.Received))
                 }
             }
 
         member self.Recv (msg: Message<'payload>) =
             match msg with
             | Sync destAddr ->
+                let counter = 
+                    Dict.getOrDefault destAddr Counter.zero logicalClock
+
                 let events = 
-                    logicalClock.Sent
-                    |> Dict.getOrDefault destAddr 0UL<events sent>
-                    |> readEventsInTxnOrder
+                    readEventsInTxnOrder (counter.Sent)
                     //|> Seq.filter (fun (k, v) -> v.Origin <> destAddr)
                     |> Seq.toArray
                 let numEventsReceived = 
@@ -231,8 +245,12 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 sendMsg destAddr storeMsg
             
             | Store (events, (addr, numEventsReceived)) ->
-                // If from another replica, update logical clock to reflect this
-                logicalClock.Received[addr] <- numEventsReceived
+                let newCounter = 
+                    logicalClock 
+                    |> Dict.get addr 
+                    |> Counter.updateReceived numEventsReceived
+                    
+                logicalClock[addr] <- newCounter
                 for (k, v) in events do
                     //self.CrashIf(v.Origin = addr, "Storing redundant events")
                     addEvent(k, v)
