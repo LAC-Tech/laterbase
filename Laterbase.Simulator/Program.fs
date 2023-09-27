@@ -65,9 +65,8 @@ let main args =
 
     let rng = Random seed
 
-    printfn "Stick it on the Laterbase"
-    printfn $"Seed = {seed}"
-    printfn $"Running for {simTime} ms"
+    printfn $"Seed = {seed}, Simulated Time = {simTime}"
+    printfn "Sticking it on the Laterbase...\n"
 
     let numReplicas = randInt rng Range.replicaCount
     let addrs = Array.init numReplicas (fun _ -> randAddr rng)
@@ -102,8 +101,8 @@ let main args =
 
     stopWatch.Stop()
     let ts = stopWatch.Elapsed
-
-    printfn $"Simulation took {ts.Milliseconds} ms"
+    printfn "Simulation is complete."
+    printfn $"Simulated time = {simTime}ms, Real time ={ts.Milliseconds}ms"
     printfn "View Replication Inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas replicas
