@@ -67,13 +67,17 @@ let main args =
 
     printfn "Stick it on the Laterbase"
     printfn $"Seed = {seed}"
-    printfn $"Running for ${simTime} ms"
+    printfn $"Running for {simTime} ms"
 
     let numReplicas = randInt rng Range.replicaCount
     let addrs = Array.init numReplicas (fun _ -> randAddr rng)
     let replicas = Simulated.Replicas<int> addrs
     let eventsPerReplica = 
         Array.init numReplicas (fun _ -> randInt rng Range.eventsPerReplica)
+
+    let stopWatch = new Diagnostics.Stopwatch()
+
+    stopWatch.Start()
 
     for t in 0L<ms> .. 10L<ms> .. (10L<s> * msPerS) do
         for replica in replicas do
@@ -96,7 +100,11 @@ let main args =
 
                 replica.Recv (StoreNew newEvents)
 
-    printfn "Simulation is complete. View Replication Inspector? (y/n)"
+    stopWatch.Stop()
+    let ts = stopWatch.Elapsed
+
+    printfn $"Simulation took {ts.Milliseconds} ms"
+    printfn "View Replication Inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas replicas
     Inspect.replicas(replicas)
