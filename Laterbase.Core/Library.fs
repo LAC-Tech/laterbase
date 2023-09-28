@@ -96,7 +96,8 @@ type Message<'payload> =
     | Sync of destAddr: Address
     | Store of 
         events: (Event.ID * Event.Val<'payload>) array *
-        from: (Address * uint64<received events>)
+        fromAddr: Address * 
+        numEventsReceived :uint64<received events>
     | StoreNew of (Event.ID * 'payload) array
 
 type LogicalClock() =
@@ -234,15 +235,15 @@ type LocalReplica<'payload>(addr, sendMsg) =
                     readEventsInTxnOrder (counter.Sent) |> Seq.toArray
                 let numEventsReceived = 
                     Checked.uint64 appendLog.Count * 1UL<events received>
-                let storeMsg = Store(events, (addr, numEventsReceived))
+                let storeMsg = Store(events, addr, numEventsReceived)
                 sendMsg destAddr storeMsg
             
-            | Store (events, (addr, numEventsReceived)) ->
+            | Store (events, fromAddr, numEventsReceived) ->
                 let newCounter = 
-                    logicalClock.Get(addr)
+                    logicalClock.Get(fromAddr)
                     |> Counter.updateReceived numEventsReceived
                 
-                logicalClock.Add(addr, newCounter)
+                logicalClock.Add(fromAddr, newCounter)
 
                 Array.iter addEvent events
                 self.CheckAppendLog()
