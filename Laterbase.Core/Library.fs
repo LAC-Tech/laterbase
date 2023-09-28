@@ -20,19 +20,25 @@ module Seq =
     let equal<'a when 'a : equality> (s1: 'a seq) (s2: 'a seq) = 
         Seq.forall2 (=) s1 s2
 
-type OrderedDict<'k, 'v> = SortedDictionary<'k, 'v>
+// Trying to hide it all so I can swap it out later.
+type OrderedDict<'k, 'v> private(innerDict: SortedDictionary<'k, 'v>) =
+    new() = OrderedDict(new SortedDictionary<'k, 'v>())
 
-module OrderedDict =
-    let get k (dict: OrderedDict<'k, 'v>) = 
-        dict.TryGetValue k |> Option.ofTry
-    
-    let getOrDefault k defaultValue (dict: OrderedDict<'k, 'v>)  = 
-        get k dict |> Option.defaultValue defaultValue
-    
-    let getKeyValue k dict = get k dict |> Option.map (fun v -> (k, v))
+    member _.Get(k) =  innerDict.TryGetValue k |> Option.ofTry
 
-    let toSeq (dict: OrderedDict<'k, 'v>) =
-        dict |> Seq.map (fun kvp -> (kvp.Key, kvp.Value))
+    member self.GetOrDefault(k, defaultValue) =
+        self.Get(k) |> Option.defaultValue defaultValue
+
+    member self.GetKeyValue(k) = 
+        self.Get(k) |> Option.map (fun v -> (k, v))
+
+    member _.Add(k, v) = innerDict.Add(k, v)
+    member _.TryAdd(k, v) = innerDict.TryAdd(k, v)
+
+    member _.Count with get() = innerDict.Count
+
+    member _.ToSeq() =
+        innerDict |> Seq.map (fun kvp -> (kvp.Key, kvp.Value))
 
 /// When a replica recorded an event
 [<Measure>] type transaction
@@ -96,14 +102,14 @@ type Message<'payload> =
 type LogicalClock() =
     // Double sided counter so we can just send single counters across the network
     // TODO save some space and just store the difference?
-    member val Sent = new OrderedDict<Address, uint64<sent events>>()
-    member val Received = new OrderedDict<Address, uint64<received events>>()
+    member val Sent = OrderedDict<Address, uint64<sent events>>()
+    member val Received = OrderedDict<Address, uint64<received events>>()
 
     override self.ToString() =
         // Parker 1983 syntax
         let stringify (dict: OrderedDict<_, _>) =
-            let elems = 
-                [for v in dict -> $"{v.Key}:{v.Value}" ]
+            let elems =
+                [for (k, v) in dict.ToSeq() -> $"{k}:{v}"]
                 |> String.concat ","
             $"<{elems}>"
 
@@ -170,18 +176,18 @@ module Counter =
     | None -> {Sent = 0UL<sent events>; Received = numEventsReceived}
 
 type LocalReplica<'payload>(addr, sendMsg) =
-    let events = new OrderedDict<Event.ID, Event.Val<'payload>>()
+    let events = OrderedDict<Event.ID, Event.Val<'payload>>()
     (**
         This imposes a total order on a partial order.
         Should it be a jagged array with concurrent events stored together? 
     *)
     let appendLog = ResizeArray<Event.ID>()
-    let logicalClock = new OrderedDict<Address, Counter>()
+    let logicalClock = OrderedDict<Address, Counter>()
 
     let readEventsInTxnOrder since =
         appendLog
         |> Seq.skip (Checked.int since - 1) 
-        |> Seq.choose (fun eventId -> OrderedDict.getKeyValue eventId events)
+        |> Seq.choose (fun eventId -> events.GetKeyValue eventId)
 
 
     // Only add to the append log if the event does not already exist
@@ -200,8 +206,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
         member val Addr = addr
         member _.Read(query) =
             match query.ByTime with
-            | PhysicalValid ->
-                events |> OrderedDict.toSeq |> Seq.skip (int query.Limit)
+            | PhysicalValid -> events.ToSeq() |> Seq.skip (int query.Limit)
             | LogicalTxn ->
                 let since = (uint64 query.Limit) * 1UL<sent events>
                 readEventsInTxnOrder since
@@ -215,10 +220,8 @@ type LocalReplica<'payload>(addr, sendMsg) =
             let debug: Replica.DebugView = {
                 AppendLog = appendLog
                 LogicalClock = 
-                    logicalClock 
-                    |> Seq.map(fun kvp -> 
-                        (kvp.Key, kvp.Value.Sent, kvp.Value.Received)) 
-                    
+                    logicalClock.ToSeq()
+                    |> Seq.map(fun (k, v) -> (k, v.Sent, v.Received))
             }
 
             {Events = events; Debug = Some debug}
@@ -226,8 +229,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
         member self.Recv (msg: Message<'payload>) =
             match msg with
             | Sync destAddr ->
-                let counter = 
-                    OrderedDict.getOrDefault destAddr Counter.zero logicalClock
+                let counter = logicalClock.GetOrDefault(destAddr, Counter.zero)
                 let events = 
                     readEventsInTxnOrder (counter.Sent) |> Seq.toArray
                 let numEventsReceived = 
@@ -237,11 +239,10 @@ type LocalReplica<'payload>(addr, sendMsg) =
             
             | Store (events, (addr, numEventsReceived)) ->
                 let newCounter = 
-                    logicalClock 
-                    |> OrderedDict.get addr 
+                    logicalClock.Get(addr)
                     |> Counter.updateReceived numEventsReceived
                 
-                logicalClock[addr] <- newCounter
+                logicalClock.Add(addr, newCounter)
 
                 Array.iter addEvent events
                 self.CheckAppendLog()
