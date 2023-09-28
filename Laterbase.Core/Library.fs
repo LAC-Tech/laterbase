@@ -10,8 +10,6 @@ open System
 open System.Collections.Generic
 open System.Runtime.CompilerServices
 
-open CSharpTest.Net.Collections
-
 open NetUlid
 
 (* Convenience functions *)
@@ -22,7 +20,7 @@ module Seq =
     let equal<'a when 'a : equality> (s1: 'a seq) (s2: 'a seq) = 
         Seq.forall2 (=) s1 s2
 
-type OrderedDict<'k, 'v> = BPlusTree<'k, 'v>
+type OrderedDict<'k, 'v> = SortedDictionary<'k, 'v>
 
 module OrderedDict =
     let get k (dict: OrderedDict<'k, 'v>) = 

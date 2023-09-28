@@ -10,7 +10,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CSharpTest.Net.Collections-NetStd2" Version="14.907.0" />
     <PackageReference Include="NetUlid" Version="2.1.0" />
   </ItemGroup>
 
