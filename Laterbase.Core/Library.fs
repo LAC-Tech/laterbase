@@ -32,7 +32,7 @@ type OrderedDict<'k, 'v> private(innerDict: SortedDictionary<'k, 'v>) =
     member self.GetKeyValue(k) = 
         self.Get(k) |> Option.map (fun v -> (k, v))
 
-    member _.Add(k, v) = innerDict.Add(k, v)
+    member _.OverWrite(k, v) = innerDict[k] <- v
     member _.TryAdd(k, v) = innerDict.TryAdd(k, v)
 
     member _.Count with get() = innerDict.Count
@@ -190,7 +190,6 @@ type LocalReplica<'payload>(addr, sendMsg) =
         |> Seq.skip (Checked.int since - 1) 
         |> Seq.choose (fun eventId -> events.GetKeyValue eventId)
 
-
     // Only add to the append log if the event does not already exist
     let addEvent (k, v: Event.Val<'payload>) = 
         if events.TryAdd(k, v) then appendLog.Add k
@@ -242,8 +241,9 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 let newCounter = 
                     logicalClock.Get(fromAddr)
                     |> Counter.updateReceived numEventsReceived
-                
-                logicalClock.Add(fromAddr, newCounter)
+
+                // TODO: take max?                
+                logicalClock.OverWrite(fromAddr, newCounter)
 
                 Array.iter addEvent events
                 self.CheckAppendLog()
