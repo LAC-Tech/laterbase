@@ -188,7 +188,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
     let readEventsInTxnOrder since =
         appendLog
         |> Seq.skip (Checked.int since - 1) 
-        |> Seq.choose (fun eventId -> events.GetKeyValue eventId)
+        |> Seq.choose events.GetKeyValue
 
     // Only add to the append log if the event does not already exist
     let addEvent (k, v: Event.Val<'payload>) = 
