@@ -48,6 +48,17 @@ let randNewEvent (rng: Random) time =
     let payload = rng.Next()
     (_id, payload)
 
+/// In-memory replicas that send messages immediately
+/// TODO: "you can make it not so easy..."
+let replicaNetwork<'e> addrs =
+    let network = ResizeArray<IReplica<'e>>()
+    let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
+    let replicas = 
+        addrs |>
+        Array.map (fun addr -> LocalReplica(addr, sendMsg) :> IReplica<'e>) 
+    network.AddRange(replicas)
+    replicas
+
 let simTime =  (1L<m> * sPerM * msPerS)
 
 [<EntryPoint>]
@@ -70,7 +81,7 @@ let main args =
 
     let numReplicas = randInt rng Range.replicaCount
     let addrs = Array.init numReplicas (fun _ -> randAddr rng)
-    let replicas = Simulated.Replicas<int> addrs
+    let replicas = replicaNetwork<int> addrs
     let eventsPerReplica = 
         Array.init numReplicas (fun _ -> randInt rng Range.eventsPerReplica)
 

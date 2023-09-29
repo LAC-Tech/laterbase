@@ -11,7 +11,7 @@ let gen16Bytes =
 
 let genEventID =
     Gen.map2 
-        (fun ts bytes -> Event.newId ts bytes)
+        (fun ts bytes -> EventID(ts, bytes))
         (ArbMap.defaults |> ArbMap.generate<int64<valid ms>> |> Gen.map abs)
         (ArbMap.defaults |> ArbMap.generate<byte> |> Gen.arrayOfLength 10)
 
@@ -19,7 +19,7 @@ let genAddr = gen16Bytes |> Gen.map Address
 
 type MyGenerators = 
     static member EventID() =
-        {new Arbitrary<Event.ID>() with
+        {new Arbitrary<EventID>() with
             override _.Generator = genEventID                            
             override _.Shrinker _ = Seq.empty}
 
@@ -40,38 +40,48 @@ let test descr testFn =
     Check.One(config, testFn)
     printfn "\n"
 
-// test
-//     "Can read back the events you store"
-//     (fun (inputEvents: (Event.ID * int64) array) (addr: Address) ->
-//         let r: IReplica<int64> = LocalReplica(addr, fun _ _ -> ())
-//         seq {
-//             for _ in 1..100 do
-//                 r.Recv (StoreNew inputEvents)
+test
+    "Can read back the events you store"
+    (fun (inputEvents: (EventID * int64) array) (addr: Address) ->
+        let r: IReplica<int64> = LocalReplica(addr, fun _ _ -> ())
+        seq {
+            for _ in 1..100 do
+                r.Recv (StoreNew inputEvents)
 
-//                 let outputEvents = r.Read({ByTime = LogicalTxn; Limit = 0uy})
+                let outputEvents = r.Read({ByTime = LogicalTxn; Limit = 0})
 
-//                 let outputEvents = 
-//                     outputEvents 
-//                     |> Seq.map (fun (k, v) -> (k, v.Payload))
-//                     |> Seq.toArray
+                let outputEvents = 
+                    outputEvents 
+                    |> Seq.map (fun (k, v) -> (k, v.Payload))
+                    |> Seq.toArray
 
-//                 // Storage will not store duplicates
-//                 let inputEvents = 
-//                     inputEvents |> Array.distinctBy (fun (k, _) -> k) 
+                // Storage will not store duplicates
+                let inputEvents = 
+                    inputEvents |> Array.distinctBy (fun (k, _) -> k) 
 
-//                 inputEvents = outputEvents
-//         }
-//         |> Seq.forall id
-//     )
+                inputEvents = outputEvents
+        }
+        |> Seq.forall id
+    )
 
-let oneTestReplica addr = Simulated.Replicas[|addr|].[0]
+/// In-memory replicas that send messages immediately
+let replicaNetwork<'e> addrs =
+    let network = ResizeArray<IReplica<'e>>()
+    let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
+    let replicas = 
+        addrs |>
+        Array.map (fun addr -> LocalReplica(addr, sendMsg) :> IReplica<'e>) 
+    network.AddRange(replicas)
+    replicas
+
+let oneTestReplica addr = replicaNetwork [|addr|].[0]
 
 let twoTestReplicas (addr1, addr2) =
-    let rs = Simulated.Replicas [|addr1; addr2|]
+    let rs = replicaNetwork [|addr1; addr2|]
     (rs[0], rs[1])
 
 let threeTestReplicas (addr1, addr2, addr3) =
-    let rs = Simulated.Replicas [|addr1; addr2; addr3|]
+    let rs = replicaNetwork  [|addr1; addr2; addr3|]
     (rs[0], rs[1], rs[2])
 
 (*
@@ -106,8 +116,8 @@ test
     "two databases will have the same events if they sync with each other"
     (fun
         ((addr1, addr2) : (Address * Address))
-        (events1 : (Event.ID * int) array)
-        (events2 : (Event.ID * int) array) ->
+        (events1 : (EventID * int) array)
+        (events2 : (EventID * int) array) ->
     
         let (r1, r2) = twoTestReplicas(addr1, addr2)
 
@@ -136,8 +146,8 @@ test
     (fun
         ((addrA1, addrB1, addrA2, addrB2) : 
             (Address * Address * Address * Address))
-        (eventsA : (Event.ID * int) array)
-        (eventsB : (Event.ID * int) array) ->
+        (eventsA : (EventID * int) array)
+        (eventsB : (EventID * int) array) ->
 
         let (rA1, rB1) = twoTestReplicas(addrA1, addrB1)
         let (rA2, rB2) = twoTestReplicas(addrA2, addrB2)
@@ -162,7 +172,7 @@ test
     (fun
         (addr: Address)
         (controlAddr: Address)
-        (events : (Event.ID * Event.Val<int>) array) ->
+        (events : (EventID * EventVal<int>) array) ->
 
         let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
 
@@ -179,9 +189,9 @@ test
     (fun
         ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
         (Address * Address * Address * Address * Address * Address))
-        (eventsA : (Event.ID * int) array)
-        (eventsB : (Event.ID * int) array)
-        (eventsC : (Event.ID * int) array) ->
+        (eventsA : (EventID * int) array)
+        (eventsB : (EventID * int) array)
+        (eventsC : (EventID * int) array) ->
 
         let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
         let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)

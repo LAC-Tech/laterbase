@@ -69,25 +69,22 @@ type Address(id: byte array) =
         |> Array.map (fun b -> b.ToString("X2"))
         |> String.concat ""
 
-module Event =
-    /// IDs must be globally unique and orderable. They should contain within
-    /// them the physical valid time. This is so clients can generate their own
-    /// IDs.
-    /// Valid time is used so:
-    /// - replicas can create their own IDs
-    /// - we can backdate
-    /// TODO: make sure the timestamp is not greater than current time.
-    type ID = Ulid
 
-    let newId (timestamp: int64<valid ms>) (tenRandomBytes: byte array) =
-        Ulid(int64 timestamp, tenRandomBytes)
+/// IDs must be globally unique and orderable. They should contain within
+/// them the physical valid time. This is so clients can generate their own
+/// IDs.
+/// Valid time is used so:
+/// - replicas can create their own IDs
+/// - we can backdate
+/// TODO: make sure the timestamp is not greater than current time.
+[<Struct; IsReadOnly>]
+type EventID(timestamp: int64<valid ms>, tenRandomBytes: byte array) =
+    member _.Ulid = Ulid(int64 timestamp, tenRandomBytes)
 
-    [<Struct; IsReadOnly>]
-    type Val<'payload> = {Origin: Address; Payload: 'payload}
+[<Struct; IsReadOnly>]
+type EventVal<'payload> = {Origin: Address; Payload: 'payload}
 
-    let newVal addr payload = {Origin = addr; Payload = payload }
-
-type Event<'payload> = Event.ID * Event.Val<'payload>
+type Event<'payload> = EventID * EventVal<'payload>
 
 // All of the messages must be idempotent
 type Message<'payload> =
@@ -97,7 +94,7 @@ type Message<'payload> =
         fromAddr: Address * 
         numEventsReceived :uint64<received>
     | StoreAck of fromAddr: Address * numEventsSent: uint64<sent>
-    | StoreNew of (Event.ID * 'payload) array
+    | StoreNew of (EventID * 'payload) array
 
 (**
     Read Queries return an event stream. We need to specify
@@ -127,27 +124,21 @@ module Query =
             let since = (uint64 query.Limit) * 1UL<sent>
             eventsInTxnOrder events appendLog since
 
+/// For local databases - can see implementation details
+type DebugView = {
+    AppendLog: EventID seq
+    LogicalClock: (Address * uint64<sent> * uint64<received>) seq
+}
 
-module Replica =
-    /// For local databases - can see implementation details
-    type DebugView = {
-        AppendLog: Event.ID seq
-        LogicalClock: (Address * uint64<sent> * uint64<received>) seq
-    }
+type View<'payload> = {
+    Events: (EventID * Address * 'payload) seq
+    Debug: DebugView option
+}
 
-    type View<'payload> = {
-        Events: (Event.ID * Address * 'payload) seq
-        Debug: DebugView option
-    }
-
-/// This is meant to be used by client code.
-/// Think pouchDBs db class, where whether it's local or remote is abstracted
-/// TODO: return Tasks
 type IReplica<'payload> =
     abstract member Addr: Address
     abstract member Read: query: Query -> Event<'payload> seq
-    abstract member View: unit -> Replica.View<'payload>
-    /// Replicas *receive* a message that is *sent* across some medium
+    abstract member View: unit -> View<'payload>
     abstract member Recv: Message<'payload> -> unit
 
 /// These are for errors I consider to be un-recoverable.
@@ -186,16 +177,16 @@ module LogicalClock =
         lc.GetOrDefault(destAddr, zero)
 
 type LocalReplica<'payload>(addr, sendMsg) =
-    let events = OrderedDict<Event.ID, Event.Val<'payload>>()
+    let events = OrderedDict<EventID, EventVal<'payload>>()
     (**
         This imposes a total order on a partial order.
         Should it be a jagged array with concurrent events stored together? 
     *)
-    let appendLog = ResizeArray<Event.ID>()
+    let appendLog = ResizeArray<EventID>()
     let logicalClock = LogicalClock()
 
     // Only add to the append log if the event does not already exist
-    let addEvent (k, v: Event.Val<'payload>) = 
+    let addEvent (k, v: EventVal<'payload>) = 
         if events.TryAdd(k, v) then appendLog.Add k
 
     member private self.CrashIf(condition, msg) =
@@ -216,7 +207,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 |> (self :> IReplica<'payload>).Read
                 |> Seq.map (fun (k, v) -> (k, v.Origin, v.Payload))
 
-            let debug: Replica.DebugView = {
+            let debug: DebugView = {
                 AppendLog = appendLog
                 LogicalClock =
                     logicalClock.ToSeq()
@@ -263,7 +254,8 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 logicalClock.OverWrite(fromAddr, newCounter)
             
             | StoreNew idPayloadPairs ->
-                let toEvents (id, payload) = (id, Event.newVal addr payload)
+                let toEvents (id, payload) = 
+                    (id, {Origin = addr; Payload = payload})
                 let events = Array.map toEvents idPayloadPairs
                 Array.iter addEvent events
                 self.CheckAppendLog()

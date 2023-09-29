@@ -8,7 +8,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Laterbase.Core\Laterbase.Core.fsproj" />
-    <ProjectReference Include="..\Laterbase.Simulated\Laterbase.Simulated.fsproj" />
     <ProjectReference Include="..\Laterbase.Inspect\Laterbase.Inspect.fsproj" />
   </ItemGroup>
   <ItemGroup>
