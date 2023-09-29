@@ -9,8 +9,6 @@ type EventVal = byte
 
 let gen16Bytes = Arb.generate<byte> |> Gen.arrayOfLength 16
 
-let genLogicalClock = Arb.generate<uint32<events>>
-
 let genEventID =
     Gen.map2 
         (fun ts bytes -> Event.newId ts bytes)

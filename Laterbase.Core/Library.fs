@@ -55,7 +55,6 @@ let msPerS: int64<ms/s> = 1000L<ms/s>
 let sPerM: int64<s/m> = 60L<s/m>
 let mPerH: int64<m/h> = 60L<m/h>
 
-[<Measure>] type events
 [<Measure>] type received
 [<Measure>] type sent
 
@@ -88,7 +87,7 @@ module Event =
 
     let newVal addr payload = {Origin = addr; Payload = payload }
 
-    type Stream<'payload> = (ID * Val<'payload>) seq
+type Event<'payload> = Event.ID * Event.Val<'payload>
 
 // All of the messages must be idempotent
 [<Struct; IsReadOnly>]
@@ -97,7 +96,7 @@ type Message<'payload> =
     | Store of 
         events: (Event.ID * Event.Val<'payload>) array *
         fromAddr: Address * 
-        numEventsReceived :uint64<received events>
+        numEventsReceived :uint64<received>
     | StoreNew of (Event.ID * 'payload) array
 
 (**
@@ -117,8 +116,7 @@ module Replica =
     /// For local databases - can see implementation details
     type DebugView = {
         AppendLog: Event.ID seq
-        LogicalClock: 
-            (Address * uint64<events sent> * uint64<events received>) seq
+        LogicalClock: (Address * uint64<sent> * uint64<received>) seq
     }
 
     type View<'payload> = {
@@ -129,12 +127,12 @@ module Replica =
 /// This is meant to be used by client code.
 /// Think pouchDBs db class, where whether it's local or remote is abstracted
 /// TODO: return Tasks
-type IReplica<'e> =
+type IReplica<'payload> =
     abstract member Addr: Address
-    abstract member Read: query: ReadQuery -> Event.Stream<'e>
-    abstract member View: unit -> Replica.View<'e>
+    abstract member Read: query: ReadQuery -> Event<'payload> seq
+    abstract member View: unit -> Replica.View<'payload>
     /// Replicas *receive* a message that is *sent* across some medium
-    abstract member Recv: Message<'e> -> unit
+    abstract member Recv: Message<'payload> -> unit
 
 /// These are for errors I consider to be un-recoverable.
 /// So, why not use an assertion?
@@ -149,14 +147,14 @@ type ReplicaConstraintViolation<'e> (reason: string, replica: IReplica<'e>) =
 /// Idea behind this is I don't have to send a logical clock across network
 /// If I store sent and received counts separately, replicas can remember.
 /// It made more sense when i thought of it... 
-type Counter = { Sent: uint64<sent events>; Received: uint64<received events> }
+type Counter = { Sent: uint64<sent>; Received: uint64<received> }
 
 module Counter =
-    let zero = { Sent = 0UL<sent events>; Received = 0UL<received events> }
+    let zero = { Sent = 0UL<sent>; Received = 0UL<received> }
 
     let updateReceived numEventsReceived = function
     | Some counter -> {counter with Received = numEventsReceived}
-    | None -> {Sent = 0UL<sent events>; Received = numEventsReceived}
+    | None -> {Sent = 0UL<sent>; Received = numEventsReceived}
 
 type LocalReplica<'payload>(addr, sendMsg) =
     let events = OrderedDict<Event.ID, Event.Val<'payload>>()
@@ -188,9 +186,11 @@ type LocalReplica<'payload>(addr, sendMsg) =
         member val Addr = addr
         member _.Read(query) =
             match query.ByTime with
-            | PhysicalValid -> events.ToSeq() |> Seq.skip (int query.Limit)
+            | PhysicalValid -> 
+                events.ToSeq() 
+                |> Seq.skip (int query.Limit)
             | LogicalTxn ->
-                let since = (uint64 query.Limit) * 1UL<sent events>
+                let since = (uint64 query.Limit) * 1UL<sent>
                 readEventsInTxnOrder since
 
         member self.View() =
@@ -215,7 +215,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 let events = 
                     readEventsInTxnOrder (counter.Sent) |> Seq.toArray
                 let numEventsReceived = 
-                    Checked.uint64 appendLog.Count * 1UL<events received>
+                    Checked.uint64 appendLog.Count * 1UL<received>
                 let storeMsg = Store(events, addr, numEventsReceived)
                 sendMsg destAddr storeMsg
             
