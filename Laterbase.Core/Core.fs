@@ -90,13 +90,13 @@ module Event =
 type Event<'payload> = Event.ID * Event.Val<'payload>
 
 // All of the messages must be idempotent
-[<Struct; IsReadOnly>]
 type Message<'payload> =
     | Sync of destAddr: Address
     | Store of 
         events: Event<'payload> array *
         fromAddr: Address * 
         numEventsReceived :uint64<received>
+    | StoreAck of fromAddr: Address * numEventsSent: uint64<sent>
     | StoreNew of (Event.ID * 'payload) array
 
 (**
@@ -109,13 +109,13 @@ type Time = PhysicalValid | LogicalTxn
 
 type Query = {
     ByTime: Time
-    Limit: byte // maximum number of events to return
+    Limit: int // maximum number of events to return
 }
 
 module Query =
     let eventsInTxnOrder<'k, 'v> (events: OrderedDict<'k, 'v>) appendLog since =
         appendLog
-        |> Seq.skip (Checked.int since - 1) 
+        |> Seq.skip (Checked.int since - 1)
         |> Seq.choose events.GetKeyValue
 
     let execute (events: OrderedDict<'k, 'v>) appendLog query =
@@ -212,7 +212,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
 
         member self.View() =
             let events = 
-                {ByTime = PhysicalValid; Limit = 0uy}
+                {ByTime = PhysicalValid; Limit = 0}
                 |> (self :> IReplica<'payload>).Read
                 |> Seq.map (fun (k, v) -> (k, v.Origin, v.Payload))
 
@@ -242,11 +242,25 @@ type LocalReplica<'payload>(addr, sendMsg) =
                     logicalClock
                     |> LogicalClock.updateReceived numEventsReceived fromAddr 
                     
-                // TODO: take max?                
                 logicalClock.OverWrite(fromAddr, newCounter)
 
+                let numEventsBefore = appendLog.Count
                 Array.iter addEvent events
                 self.CheckAppendLog()
+
+                let numEventsSent = 
+                    (appendLog.Count - numEventsBefore)
+                    |> Checked.uint64 
+                    |> ( * ) 1UL<sent>
+
+                sendMsg fromAddr (StoreAck (addr, numEventsSent))
+
+            | StoreAck (fromAddr, numEventsSent) ->
+                let newCounter =
+                    logicalClock
+                    |> LogicalClock.updateSent numEventsSent fromAddr
+
+                logicalClock.OverWrite(fromAddr, newCounter)
             
             | StoreNew idPayloadPairs ->
                 let toEvents (id, payload) = (id, Event.newVal addr payload)
