@@ -12,6 +12,6 @@
     <ProjectReference Include="..\Laterbase.Inspect\Laterbase.Inspect.fsproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FsCheck" Version="2.16.6" />
+    <PackageReference Include="FsCheck" Version="3.0.0-rc1" />
   </ItemGroup>
 </Project>

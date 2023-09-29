@@ -1,19 +1,19 @@
-﻿open FsCheck
+﻿open System
+open FsCheck
+open FsCheck.FSharp
 open Laterbase
 open Laterbase.Core
-open System
 
 Console.Clear ()
 
-type EventVal = byte
-
-let gen16Bytes = Arb.generate<byte> |> Gen.arrayOfLength 16
+let gen16Bytes = 
+    ArbMap.defaults |> ArbMap.generate<byte> |> Gen.arrayOfLength 16
 
 let genEventID =
     Gen.map2 
         (fun ts bytes -> Event.newId ts bytes)
-        (Arb.generate<int64<valid ms>> |> Gen.map abs)
-        (Arb.generate<byte> |> Gen.arrayOfLength 10)
+        (ArbMap.defaults |> ArbMap.generate<int64<valid ms>> |> Gen.map abs)
+        (ArbMap.defaults |> ArbMap.generate<byte> |> Gen.arrayOfLength 10)
 
 let genAddr = gen16Bytes |> Gen.map Address
 
@@ -28,9 +28,7 @@ type MyGenerators =
             override _.Generator = genAddr
             override _.Shrinker _ = Seq.empty}
 
-let config = {
-    Config.Quick with Arbitrary = [ typeof<MyGenerators> ]
-}
+let config = Config.Quick.WithArbitrary([ typeof<MyGenerators> ])
 
 let openInspector rs =
     printfn "error - open inspector? (y/n)"
