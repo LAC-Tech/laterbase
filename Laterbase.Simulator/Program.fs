@@ -44,7 +44,7 @@ let randElem<'a> (rng: Random) (elems: 'a array) =
     elems[index]
 
 let randNewEvent (rng: Random) time =
-    let _id = Event.newId time (randByteArray rng 10)
+    let _id = EventID(time, (randByteArray rng 10))
     let payload = rng.Next()
     (_id, payload)
 
@@ -55,7 +55,7 @@ let replicaNetwork<'e> addrs =
     let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
     let replicas = 
         addrs |>
-        Array.map (fun addr -> LocalReplica(addr, sendMsg) :> IReplica<'e>) 
+        Array.map (fun addr -> localReplica(addr, sendMsg)) 
     network.AddRange(replicas)
     replicas
 

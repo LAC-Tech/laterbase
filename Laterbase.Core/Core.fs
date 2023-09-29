@@ -176,7 +176,7 @@ module LogicalClock =
     let counter destAddr (lc: LogicalClock) =
         lc.GetOrDefault(destAddr, zero)
 
-type LocalReplica<'payload>(addr, sendMsg) =
+type private LocalReplica<'payload> (addr, sendMsg) =
     let events = OrderedDict<EventID, EventVal<'payload>>()
     (**
         This imposes a total order on a partial order.
@@ -259,3 +259,6 @@ type LocalReplica<'payload>(addr, sendMsg) =
                 let events = Array.map toEvents idPayloadPairs
                 Array.iter addEvent events
                 self.CheckAppendLog()
+
+let localReplica<'payload> (addr, sendMsg) = 
+    LocalReplica(addr, sendMsg) :> IReplica<'payload>

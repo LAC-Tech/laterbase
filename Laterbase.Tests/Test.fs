@@ -43,7 +43,7 @@ let test descr testFn =
 test
     "Can read back the events you store"
     (fun (inputEvents: (EventID * int64) array) (addr: Address) ->
-        let r: IReplica<int64> = LocalReplica(addr, fun _ _ -> ())
+        let r: IReplica<int64> = localReplica(addr, fun _ _ -> ())
         seq {
             for _ in 1..100 do
                 r.Recv (StoreNew inputEvents)
@@ -68,9 +68,7 @@ test
 let replicaNetwork<'e> addrs =
     let network = ResizeArray<IReplica<'e>>()
     let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
-    let replicas = 
-        addrs |>
-        Array.map (fun addr -> LocalReplica(addr, sendMsg) :> IReplica<'e>) 
+    let replicas = addrs |> Array.map (fun addr -> localReplica(addr, sendMsg))
     network.AddRange(replicas)
     replicas
 
