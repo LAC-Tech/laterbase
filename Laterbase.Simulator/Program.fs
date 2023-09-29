@@ -48,7 +48,7 @@ let randNewEvent (rng: Random) time =
     let payload = rng.Next()
     (_id, payload)
 
-let simTime = 10L<s> * msPerS
+let simTime =  (1L<m> * sPerM * msPerS)
 
 [<EntryPoint>]
 let main args =
@@ -78,7 +78,7 @@ let main args =
 
     stopWatch.Start()
 
-    for t in 0L<ms> .. 10L<ms> .. (10L<s> * msPerS) do
+    for t in 0L<ms> .. 10L<ms> .. simTime do
         for replica in replicas do
             if randBool rng Probability.sync then
                 // TODO: could sync with self, is that OK?
@@ -101,8 +101,10 @@ let main args =
 
     stopWatch.Stop()
     let ts = stopWatch.Elapsed
+
+    let simTimeSpan = TimeSpan.FromMilliseconds((Checked.int simTime))
     printfn "Simulation is complete."
-    printfn $"Simulated time = {simTime}ms, Real time = {ts.Milliseconds}ms"
+    printfn $"Simulated time = {simTimeSpan}, Real time = {ts}"
     printfn "View Replication Inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas replicas
