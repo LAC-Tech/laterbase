@@ -1,20 +1,15 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net7.0</TargetFramework>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
-
   <ItemGroup>
-    <Compile Include="Library.fs" />
+    <Compile Include="Inspect.fs" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Terminal.Gui" Version="1.14.0" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Laterbase.Core\Laterbase.Core.fsproj" />
   </ItemGroup>
-
 </Project>

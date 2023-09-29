@@ -94,7 +94,7 @@ type Event<'payload> = Event.ID * Event.Val<'payload>
 type Message<'payload> =
     | Sync of destAddr: Address
     | Store of 
-        events: (Event.ID * Event.Val<'payload>) array *
+        events: Event<'payload> array *
         fromAddr: Address * 
         numEventsReceived :uint64<received>
     | StoreNew of (Event.ID * 'payload) array
@@ -107,10 +107,26 @@ type Message<'payload> =
 *)
 type Time = PhysicalValid | LogicalTxn
 
-type ReadQuery = {
+type Query = {
     ByTime: Time
     Limit: byte // maximum number of events to return
 }
+
+module Query =
+    let eventsInTxnOrder<'k, 'v> (events: OrderedDict<'k, 'v>) appendLog since =
+        appendLog
+        |> Seq.skip (Checked.int since - 1) 
+        |> Seq.choose events.GetKeyValue
+
+    let execute (events: OrderedDict<'k, 'v>) appendLog query =
+        match query.ByTime with
+        | PhysicalValid ->
+            events.ToSeq() 
+            |> Seq.skip (int query.Limit)
+        | LogicalTxn ->
+            let since = (uint64 query.Limit) * 1UL<sent>
+            eventsInTxnOrder events appendLog since
+
 
 module Replica =
     /// For local databases - can see implementation details
@@ -129,7 +145,7 @@ module Replica =
 /// TODO: return Tasks
 type IReplica<'payload> =
     abstract member Addr: Address
-    abstract member Read: query: ReadQuery -> Event<'payload> seq
+    abstract member Read: query: Query -> Event<'payload> seq
     abstract member View: unit -> Replica.View<'payload>
     /// Replicas *receive* a message that is *sent* across some medium
     abstract member Recv: Message<'payload> -> unit
@@ -142,19 +158,32 @@ type ReplicaConstraintViolation<'e> (reason: string, replica: IReplica<'e>) =
     inherit Exception (reason)
     member val Replica = replica
 
-/// Double sided counter so we can just send single counters across the network
+/// Double sided counter so we can just send single int across the network
 /// TODO save some space and just store the difference?
+type Counter = { Sent: uint64<sent>; Received: uint64<received> }
+
+type LogicalClock = OrderedDict<Address, Counter>
+
 /// Idea behind this is I don't have to send a logical clock across network
 /// If I store sent and received counts separately, replicas can remember.
 /// It made more sense when i thought of it... 
-type Counter = { Sent: uint64<sent>; Received: uint64<received> }
-
-module Counter =
+module LogicalClock =
     let zero = { Sent = 0UL<sent>; Received = 0UL<received> }
 
-    let updateReceived numEventsReceived = function
-    | Some counter -> {counter with Received = numEventsReceived}
-    | None -> {Sent = 0UL<sent>; Received = numEventsReceived}
+    let updateSent numEventsSent fromAddr (lc: LogicalClock) = 
+        match lc.Get(fromAddr) with
+        | Some counter -> 
+            {counter with Sent = max counter.Sent numEventsSent}
+        | None -> {Sent = numEventsSent; Received = 0UL<received>}
+
+    let updateReceived numEventsReceived fromAddr (lc: LogicalClock) = 
+        match lc.Get(fromAddr) with
+        | Some counter -> 
+            {counter with Received = max counter.Received numEventsReceived}
+        | None -> {Sent = 0UL<sent>; Received = numEventsReceived}
+
+    let counter destAddr (lc: LogicalClock) =
+        lc.GetOrDefault(destAddr, zero)
 
 type LocalReplica<'payload>(addr, sendMsg) =
     let events = OrderedDict<Event.ID, Event.Val<'payload>>()
@@ -163,12 +192,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
         Should it be a jagged array with concurrent events stored together? 
     *)
     let appendLog = ResizeArray<Event.ID>()
-    let logicalClock = OrderedDict<Address, Counter>()
-
-    let readEventsInTxnOrder since =
-        appendLog
-        |> Seq.skip (Checked.int since - 1) 
-        |> Seq.choose events.GetKeyValue
+    let logicalClock = LogicalClock()
 
     // Only add to the append log if the event does not already exist
     let addEvent (k, v: Event.Val<'payload>) = 
@@ -184,14 +208,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
     
     interface IReplica<'payload> with
         member val Addr = addr
-        member _.Read(query) =
-            match query.ByTime with
-            | PhysicalValid -> 
-                events.ToSeq() 
-                |> Seq.skip (int query.Limit)
-            | LogicalTxn ->
-                let since = (uint64 query.Limit) * 1UL<sent>
-                readEventsInTxnOrder since
+        member _.Read(query) = Query.execute events appendLog query
 
         member self.View() =
             let events = 
@@ -201,7 +218,7 @@ type LocalReplica<'payload>(addr, sendMsg) =
 
             let debug: Replica.DebugView = {
                 AppendLog = appendLog
-                LogicalClock = 
+                LogicalClock =
                     logicalClock.ToSeq()
                     |> Seq.map(fun (k, v) -> (k, v.Sent, v.Received))
             }
@@ -211,9 +228,10 @@ type LocalReplica<'payload>(addr, sendMsg) =
         member self.Recv (msg: Message<'payload>) =
             match msg with
             | Sync destAddr ->
-                let counter = logicalClock.GetOrDefault(destAddr, Counter.zero)
-                let events = 
-                    readEventsInTxnOrder (counter.Sent) |> Seq.toArray
+                let counter = LogicalClock.counter destAddr logicalClock
+                let events =
+                    Query.eventsInTxnOrder events appendLog (counter.Sent)
+                    |> Seq.toArray
                 let numEventsReceived = 
                     Checked.uint64 appendLog.Count * 1UL<received>
                 let storeMsg = Store(events, addr, numEventsReceived)
@@ -221,9 +239,9 @@ type LocalReplica<'payload>(addr, sendMsg) =
             
             | Store (events, fromAddr, numEventsReceived) ->
                 let newCounter = 
-                    logicalClock.Get(fromAddr)
-                    |> Counter.updateReceived numEventsReceived
-
+                    logicalClock
+                    |> LogicalClock.updateReceived numEventsReceived fromAddr 
+                    
                 // TODO: take max?                
                 logicalClock.OverWrite(fromAddr, newCounter)
 
