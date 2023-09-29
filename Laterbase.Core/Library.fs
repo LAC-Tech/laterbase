@@ -100,32 +100,12 @@ type Message<'payload> =
         numEventsReceived :uint64<received events>
     | StoreNew of (Event.ID * 'payload) array
 
-type LogicalClock() =
-    // Double sided counter so we can just send single counters across the network
-    // TODO save some space and just store the difference?
-    member val Sent = OrderedDict<Address, uint64<sent events>>()
-    member val Received = OrderedDict<Address, uint64<received events>>()
-
-    override self.ToString() =
-        // Parker 1983 syntax
-        let stringify (dict: OrderedDict<_, _>) =
-            let elems =
-                [for (k, v) in dict.ToSeq() -> $"{k}:{v}"]
-                |> String.concat ","
-            $"<{elems}>"
-
-        [
-            $"└ sent = {stringify self.Sent}"; 
-            $"└ received = {stringify self.Received}"
-        ] |> String.concat "\n"
-
 (**
     Read Queries return an event stream. We need to specify
     - the order (logical transaction time, physical valid time)
     - descending or ascending
     - limit (maximum number of events to return)
 *)
-
 type Time = PhysicalValid | LogicalTxn
 
 type ReadQuery = {
@@ -164,6 +144,8 @@ type ReplicaConstraintViolation<'e> (reason: string, replica: IReplica<'e>) =
     inherit Exception (reason)
     member val Replica = replica
 
+/// Double sided counter so we can just send single counters across the network
+/// TODO save some space and just store the difference?
 /// Idea behind this is I don't have to send a logical clock across network
 /// If I store sent and received counts separately, replicas can remember.
 /// It made more sense when i thought of it... 
