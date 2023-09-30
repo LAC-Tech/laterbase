@@ -246,14 +246,11 @@ type private LocalReplica<'payload> (addr, sendMsg) =
             
             | Store (events, fromAddr, numEventsReceived) ->
                 logicalClock.UpdateReceived(fromAddr, numEventsReceived)
-                let numEventsBefore = appendLog.Count
                 Array.iter addEvent events
                 self.CheckAppendLog()
-
+                
                 let numEventsSent = 
-                    (appendLog.Count - numEventsBefore)
-                    |> Checked.uint64 
-                    |> ( * ) 1UL<sent>
+                    events |> Array.length |> Checked.uint64 |> ( * ) 1UL<sent>
 
                 sendMsg fromAddr (StoreAck (addr, numEventsSent))
 

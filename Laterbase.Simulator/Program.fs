@@ -15,38 +15,39 @@ module Range =
     let eventsPerReplica = {Min = 0; Max = 256}
     let eventsPerTick = {Min = 0; Max = 8}
 
-let randInt (rng: Random) (range: Range) =
-    rng.Next(range.Min, range.Max)
-
 type Probability = {Min: float; Max: float}
 
 module Probability =
     let sync = {Min = 0.0; Max = 0.1}
     let recvEvents = {Min = 0.0; Max = 1.0}
 
-// probability is the chance of it being *true*
-let randBool (rng: Random) (prob: Probability) =
-    let randFloat = rng.NextDouble() * prob.Max + prob.Min
-    rng.NextDouble() < randFloat
+module Rand =
+    let int (rng: Random) (range: Range) =
+        rng.Next(range.Min, range.Max)
 
-let randByteArray (rng: Random) len =
-    let result = Array.zeroCreate<byte> len
-    rng.NextBytes result
-    result
+    /// chance of it being true
+    let bool (rng: Random) (prob: Probability) =
+        let randFloat = rng.NextDouble() * prob.Max + prob.Min
+        rng.NextDouble() < randFloat
+
+    let byteArray (rng: Random) len =
+        let result = Array.zeroCreate<byte> len
+        rng.NextBytes result
+        result
     
-let randAddr (rng: Random) =
-    let len = randInt rng Range.addrLen
-    let bytes = randByteArray rng len
-    Address bytes
+    let addr (rng: Random) =
+        let len = int rng Range.addrLen
+        let bytes = byteArray rng len
+        Address bytes
 
-let randElem<'a> (rng: Random) (elems: 'a array) =
-    let index = rng.Next(0, elems |> Array.length)
-    elems[index]
+    let elem<'a> (rng: Random) (elems: 'a array) =
+        let index = rng.Next(0, elems |> Array.length)
+        elems[index]
 
-let randNewEvent (rng: Random) time =
-    let _id = EventID(time, (randByteArray rng 10))
-    let payload = rng.Next()
-    (_id, payload)
+    let newEvent (rng: Random) time =
+        let _id = EventID(time, (byteArray rng 10))
+        let payload = rng.Next()
+        (_id, payload)
 
 /// In-memory replicas that send messages immediately
 /// TODO: "you can make it not so easy..."
@@ -79,11 +80,11 @@ let main args =
     printfn $"Seed = {seed}"
     printfn "Sticking it on the Laterbase...\n"
 
-    let numReplicas = randInt rng Range.replicaCount
-    let addrs = Array.init numReplicas (fun _ -> randAddr rng)
+    let numReplicas = Rand.int rng Range.replicaCount
+    let addrs = Array.init numReplicas (fun _ -> Rand.addr rng)
     let replicas = replicaNetwork<int> addrs
     let eventsPerReplica = 
-        Array.init numReplicas (fun _ -> randInt rng Range.eventsPerReplica)
+        Array.init numReplicas (fun _ -> Rand.int rng Range.eventsPerReplica)
 
     let stopWatch = new Diagnostics.Stopwatch()
 
@@ -91,13 +92,13 @@ let main args =
 
     for t in 0L<ms> .. 10L<ms> .. simTime do
         for replica in replicas do
-            if randBool rng Probability.sync then
+            if Rand.bool rng Probability.sync then
                 // TODO: could sync with self, is that OK?
-                let destReplica = randElem rng replicas
+                let destReplica = Rand.elem rng replicas
                 replica.Recv (Sync destReplica.Addr)
 
-            if randBool rng Probability.recvEvents then
-                let numEvents = randInt rng Range.eventsPerTick
+            if Rand.bool rng Probability.recvEvents then
+                let numEvents = Rand.int rng Range.eventsPerTick
 
                 // TODO: allocating every loop..
                 let newEvents = Array.init numEvents (fun _ -> 
@@ -105,7 +106,7 @@ let main args =
                     // TODO: all these times are the same
                     // TODO: Test forward-dating is forbidden
                     let t = t * 1L<valid>
-                    randNewEvent rng t
+                    Rand.newEvent rng t
                 )
 
                 replica.Recv (StoreNew newEvents)
