@@ -217,7 +217,9 @@ type private LocalReplica<'payload> (addr, sendMsg) =
     
     interface IReplica<'payload> with
         member val Addr = addr
-        member _.Read(query) = Query.execute events appendLog query
+        member self.Read(query) = 
+            self.CheckAppendLog()
+            Query.execute events appendLog query
 
         member self.View() =
             let events = 
@@ -236,7 +238,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
             match msg with
             | Sync destAddr ->
                 let events =
-                    logicalClock.GetSent(destAddr) 
+                    logicalClock.GetSent(destAddr)
                     |> Query.inTxnOrder events appendLog
                     |> Seq.toArray
 

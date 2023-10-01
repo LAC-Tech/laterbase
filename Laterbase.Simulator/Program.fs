@@ -90,11 +90,19 @@ let main args =
 
     stopWatch.Start()
 
+    //let eventBuffer = Array.zeroCreate<EventID * int> Range.eventsPerTick.Max
+
+    let rec replicaExcept r = 
+        let result = Rand.elem rng replicas
+        if result = r then
+            replicaExcept r
+        else
+            result
+
     for t in 0L<ms> .. 10L<ms> .. simTime do
         for replica in replicas do
             if Rand.bool rng Probability.sync then
-                // TODO: could sync with self, is that OK?
-                let destReplica = Rand.elem rng replicas
+                let destReplica = replicaExcept replica
                 replica.Recv (Sync destReplica.Addr)
 
             if Rand.bool rng Probability.recvEvents then
@@ -105,8 +113,7 @@ let main args =
                     // TODO: assuming transaction time = valid here
                     // TODO: all these times are the same
                     // TODO: Test forward-dating is forbidden
-                    let t = t * 1L<valid>
-                    Rand.newEvent rng t
+                    Rand.newEvent rng (t * 1L<valid>)
                 )
 
                 replica.Recv (StoreNew newEvents)
