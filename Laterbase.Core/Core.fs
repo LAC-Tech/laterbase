@@ -126,10 +126,11 @@ module Query =
 
     let execute (events: OrderedDict<'k, 'v>) appendLog query =
         match query.ByTime with
-        | PhysicalValid -> events |> Seq.skip (int query.Limit)
+        | PhysicalValid -> events |> Seq.skip (int query.Limit) 
         | LogicalTxn ->
             let since = (uint64 query.Limit) * 1UL<sent>
             inTxnOrder events appendLog since
+
 
 /// For local databases - can see implementation details
 type DebugView = {
@@ -144,7 +145,7 @@ type View<'payload> = {
 
 type IReplica<'payload> =
     abstract member Addr: Address
-    abstract member Read: query: Query -> Event<'payload> seq
+    abstract member Read: query: Query -> Event<'payload> array
     abstract member View: unit -> View<'payload>
     abstract member Recv: Message<'payload> -> unit
 
@@ -223,7 +224,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
         member val Addr = addr
         member self.Read(query) = 
             self.CheckAppendLog()
-            Query.execute events appendLog query
+            Array.ofSeq (Query.execute events appendLog query)
 
         member self.View() =
             let events = 
