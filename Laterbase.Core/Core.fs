@@ -30,13 +30,12 @@ type OrderedDict<'k, 'v> private(innerDict: SortedDictionary<'k, 'v>) =
 
     new() = OrderedDict(new SortedDictionary<'k, 'v>())
 
-    member _.Get(k) =  innerDict.TryGetValue k |> Option.ofTry
+    member _.Get(k) = innerDict.TryGetValue k |> Option.ofTry
 
     member self.GetOrDefault(k, defaultValue) =
         self.Get(k) |> Option.defaultValue defaultValue
 
-    member self.GetKeyValue(k) = 
-        self.Get(k) |> Option.map (fun v -> (k, v))
+    member self.GetKeyValue(k) = self.Get(k) |> Option.map (fun v -> (k, v))
 
     member _.OverWrite(k, v) = innerDict[k] <- v
     member _.TryAdd(k, v) = innerDict.TryAdd(k, v)
@@ -136,7 +135,6 @@ module Query =
             let since = (uint64 query.Limit) * 1UL<sent>
             inTxnOrder eventTable appendLog since
 
-
 /// For local databases - can see implementation details
 type DebugView = {
     AppendLog: EventID seq
@@ -165,8 +163,6 @@ type ReplicaConstraintViolation<'e> (reason: string, replica: IReplica<'e>) =
 /// Double sided counter so we can just send single int across the network
 /// TODO save some space and just store the difference?
 type Counter = { Sent: uint64<sent>; Received: uint64<received> }
-
-// type LogicalClock = OrderedDict<Address, Counter>
 
 /// Idea behind this is I don't have to send a logical clock across network
 /// If I store sent and received counts separately, replicas can remember.
@@ -255,7 +251,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
 
                 let numEventsReceived =
                     Checked.uint64 appendLog.Count * 1UL<received>
-
+                    
                 Store(events, addr, numEventsReceived) |> sendMsg destAddr
             
             | Store (events, fromAddr, numEventsReceived) ->
@@ -264,7 +260,6 @@ type private LocalReplica<'payload> (addr, sendMsg) =
                 self.CheckAppendLog()
 
                 let numEventsSent = Array.uLength events * 1UL<sent>
-
                 StoreAck(addr, numEventsSent) |> sendMsg fromAddr
 
             | StoreAck (fromAddr, numEventsSent) ->
