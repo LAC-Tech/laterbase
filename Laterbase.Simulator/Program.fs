@@ -49,18 +49,40 @@ module Rand =
         let payload = rng.Next()
         (_id, payload)
 
+type Stats = {
+    mutable TotalMessages: uint64
+    mutable NewEvents: uint64
+    mutable EventsSent: uint64
+}
+
 /// In-memory replicas that send messages immediately
 /// TODO: "you can make it not so easy..."
 let replicaNetwork<'e> addrs =
+    let stats = {
+        TotalMessages = 0UL
+        NewEvents = 0UL
+        EventsSent = 0UL  
+    }
     let network = ResizeArray<IReplica<'e>>()
-    let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
+    let sendMsg addr msg =
+        stats.TotalMessages <- stats.TotalMessages + 1UL
+
+        match msg with
+        | StoreNew newEvents -> 
+            stats.NewEvents <- stats.NewEvents + (newEvents |> Array.uLength)
+        | Store (es, _, _) ->
+            stats.EventsSent <- stats.EventsSent + (es |> Array.uLength)
+        | _ -> ()
+
+        network.Find(fun r -> r.Addr = addr).Recv msg
+
     let replicas = 
         addrs |>
         Array.map (fun addr -> localReplica(addr, sendMsg)) 
     network.AddRange(replicas)
-    replicas
+    (replicas, sendMsg, stats)
 
-let simTime =  (1L<m> * sPerM * msPerS)
+let simTime =  1L<m> * sPerM * msPerS
 
 [<EntryPoint>]
 let main args =
@@ -69,8 +91,7 @@ let main args =
         match args with
         | [||] -> Random().Next()
         | [|s|] -> 
-            try
-                int s
+            try int s
             with | :? FormatException ->
                 failwithf "First argument %A was not an integer" s
         | _ -> failwith "too many args"
@@ -82,12 +103,11 @@ let main args =
 
     let numReplicas = Rand.int rng Range.replicaCount
     let addrs = Array.init numReplicas (fun _ -> Rand.addr rng)
-    let replicas = replicaNetwork<int> addrs
+    let (replicas, sendMsg, stats) = replicaNetwork<int> addrs
     let eventsPerReplica = 
         Array.init numReplicas (fun _ -> Rand.int rng Range.eventsPerReplica)
 
     let stopWatch = new Diagnostics.Stopwatch()
-
     stopWatch.Start()
 
     //let eventBuffer = Array.zeroCreate<EventID * int> Range.eventsPerTick.Max
@@ -103,7 +123,7 @@ let main args =
         for replica in replicas do
             if Rand.bool rng Probability.sync then
                 let destReplica = replicaExcept replica
-                replica.Recv (Sync destReplica.Addr)
+                sendMsg replica.Addr (Sync destReplica.Addr)
 
             if Rand.bool rng Probability.recvEvents then
                 let numEvents = Rand.int rng Range.eventsPerTick
@@ -116,7 +136,7 @@ let main args =
                     Rand.newEvent rng (t * 1L<valid>)
                 )
 
-                replica.Recv (StoreNew newEvents)
+                sendMsg replica.Addr (StoreNew newEvents)
 
     stopWatch.Stop()
     let ts = stopWatch.Elapsed
@@ -124,6 +144,7 @@ let main args =
     let simTimeSpan = TimeSpan.FromMilliseconds((Checked.int simTime))
     printfn "Simulation is complete."
     printfn $"Simulated time = {simTimeSpan}, Real time = {ts}"
+    printfn "Stats = %A" stats
     printfn "View Replication Inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas replicas

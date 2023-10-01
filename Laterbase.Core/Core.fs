@@ -20,6 +20,9 @@ module Seq =
     let equal<'a when 'a : equality> (s1: 'a seq) (s2: 'a seq) = 
         Seq.forall2 (=) s1 s2
 
+module Array =
+    let uLength a = (Array.length >> Checked.uint64) a
+
 // Trying to hide it all so I can swap it out later.
 type OrderedDict<'k, 'v> private(innerDict: SortedDictionary<'k, 'v>) =
     let seq () = innerDict |> Seq.map (fun kvp -> (kvp.Key, kvp.Value))
@@ -252,8 +255,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
                 Array.iter addEvent events
                 self.CheckAppendLog()
 
-                let numEventsSent =
-                    (Array.length events |> Checked.uint64) * 1UL<sent>
+                let numEventsSent = Array.uLength events * 1UL<sent>
 
                 StoreAck(addr, numEventsSent) |> sendMsg fromAddr
 
