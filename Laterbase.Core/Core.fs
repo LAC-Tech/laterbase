@@ -197,8 +197,8 @@ type LogicalClock private (dict:OrderedDict<Address, Counter>) =
 type private LocalReplica<'payload> (addr, sendMsg) =
     let events = OrderedDict<EventID, EventVal<'payload>>()
     (**
-        This imposes a total order on a partial order.
-        Should it be a jagged array with concurrent events stored together? 
+        This is linear, and so imposes a total order on a partial order.
+        TODO: added another array that keeps track of which were concurrent?
     *)
     let appendLog = ResizeArray<EventID>()
     let logicalClock = LogicalClock()
@@ -235,24 +235,25 @@ type private LocalReplica<'payload> (addr, sendMsg) =
         member self.Recv (msg: Message<'payload>) =
             match msg with
             | Sync destAddr ->
-                let sent = logicalClock.GetSent(destAddr)
                 let events =
-                    Query.inTxnOrder events appendLog sent
+                    logicalClock.GetSent(destAddr) 
+                    |> Query.inTxnOrder events appendLog
                     |> Seq.toArray
+
                 let numEventsReceived =
                     Checked.uint64 appendLog.Count * 1UL<received>
-                let storeMsg = Store(events, addr, numEventsReceived)
-                sendMsg destAddr storeMsg
+
+                Store(events, addr, numEventsReceived) |> sendMsg destAddr
             
             | Store (events, fromAddr, numEventsReceived) ->
                 logicalClock.UpdateReceived(fromAddr, numEventsReceived)
                 Array.iter addEvent events
                 self.CheckAppendLog()
 
-                let numEventsSent = 
+                let numEventsSent =
                     (Array.length events |> Checked.uint64) * 1UL<sent>
 
-                sendMsg fromAddr (StoreAck (addr, numEventsSent))
+                StoreAck(addr, numEventsSent) |> sendMsg fromAddr
 
             | StoreAck (fromAddr, numEventsSent) ->
                 logicalClock.UpdateSent(fromAddr, numEventsSent)
