@@ -18,7 +18,7 @@ module Range =
 type Probability = {Min: float; Max: float}
 
 module Probability =
-    let sync = {Min = 0.0; Max = 0.001}
+    let sync = {Min = 0.0; Max = 0.1}
     let recvEvents = {Min = 0.0; Max = 1.0}
 
 module Rand =
@@ -143,12 +143,18 @@ let main args =
 
     let simTimeSpan = TimeSpan.FromMilliseconds((Checked.int simTime))
     printfn "Simulation is complete."
+    let distinctReplicas = 
+        replicas 
+        |> Seq.distinctBy (fun r -> r.Read({ByTime = PhysicalValid; Limit = 0}))
+
+    eprintfn $"Distinct replicas = {distinctReplicas |> Seq.length}"
+
     printfn $"Simulated time = {simTimeSpan}, Real time = {ts}"
     printfn $"Statistics for {Array.length replicas} replicas:"
     printfn $"- Messages sent = {stats.TotalMessages:n0}"
     printfn $"- Events generated = {stats.NewEvents:n0}"
     printfn $"- Events sent = {stats.EventsSent |> Seq.sum:n0}\t" 
-    printfn $"- Avg events per msg = {stats.EventsSent |> Seq.averageBy float:n0}" 
+    printfn $"- Avg events per msg = {stats.EventsSent |> Seq.averageBy float:n0}"
     printfn "View Replication Inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas replicas
