@@ -101,6 +101,7 @@ type Message<'payload> =
         events: Event<'payload> array *
         fromAddr: Address * 
         numEventsReceived: uint64<received>
+    /// This halves the number of events sent across network in simulator
     | StoreAck of fromAddr: Address * numEventsSent: uint64<sent>
     | StoreNew of (EventID * 'payload) array
 

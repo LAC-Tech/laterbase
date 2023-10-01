@@ -10,7 +10,7 @@ type Range = {Min: int; Max: int}
 
 module Range =
     let addrLen = {Min = 16; Max = 16} // Unique but still fits in screen?
-    let replicaCount = {Min = 2; Max = 8} // TB has 0..8. TODO: Why 0?
+    let replicaCount = {Min = 2; Max = 10} // TB has 0..8. TODO: Why 0?
     // How many events a replica will consume
     let eventsPerReplica = {Min = 0; Max = 256}
     let eventsPerTick = {Min = 0; Max = 8}
@@ -18,7 +18,7 @@ module Range =
 type Probability = {Min: float; Max: float}
 
 module Probability =
-    let sync = {Min = 0.0; Max = 0.1}
+    let sync = {Min = 0.0; Max = 0.01}
     let recvEvents = {Min = 0.0; Max = 1.0}
 
 module Rand =
@@ -54,6 +54,8 @@ type Stats = {
     mutable NewEvents: uint64
     mutable EventsSent: uint64
 }
+
+let formatNum (n: uint64) = System.String.Format("{0:n0}", n)
 
 /// In-memory replicas that send messages immediately
 /// TODO: "you can make it not so easy..."
@@ -144,7 +146,10 @@ let main args =
     let simTimeSpan = TimeSpan.FromMilliseconds((Checked.int simTime))
     printfn "Simulation is complete."
     printfn $"Simulated time = {simTimeSpan}, Real time = {ts}"
-    printfn "Stats = %A" stats
+    printfn $"Statistics for {Array.length replicas} replicas:"
+    printfn $"- {formatNum stats.TotalMessages}\tmessages sent"
+    printfn $"- {formatNum stats.NewEvents}\tevents generated"
+    printfn $"- {formatNum stats.EventsSent}\tevents sent across network" 
     printfn "View Replication Inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas replicas
