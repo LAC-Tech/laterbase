@@ -69,11 +69,10 @@ let mPerH: int64<m/h> = 60L<m/h>
 type Address(id: byte array) =
     member _.Id = id
     // Hex string for compactness
-    override this.ToString() = 
+    override this.ToString() =
         this.Id
         |> Array.map (fun b -> b.ToString("X2"))
         |> String.concat ""
-
 
 /// IDs must be globally unique and orderable. They should contain within
 /// them the physical valid time. This is so clients can generate their own
@@ -85,6 +84,7 @@ type Address(id: byte array) =
 [<Struct; IsReadOnly>]
 type EventID(timestamp: int64<valid ms>, tenRandomBytes: byte array) =
     member _.Ulid = Ulid(int64 timestamp, tenRandomBytes)
+    override self.ToString() = self.Ulid.ToString()
 
 [<Struct; IsReadOnly>]
 type EventVal<'payload> = {Origin: Address; Payload: 'payload}
@@ -97,7 +97,7 @@ type Message<'payload> =
     | Store of 
         events: Event<'payload> array *
         fromAddr: Address * 
-        numEventsReceived :uint64<received>
+        numEventsReceived: uint64<received>
     | StoreAck of fromAddr: Address * numEventsSent: uint64<sent>
     | StoreNew of (EventID * 'payload) array
 
@@ -248,9 +248,9 @@ type private LocalReplica<'payload> (addr, sendMsg) =
                 logicalClock.UpdateReceived(fromAddr, numEventsReceived)
                 Array.iter addEvent events
                 self.CheckAppendLog()
-                
+
                 let numEventsSent = 
-                    events |> Array.length |> Checked.uint64 |> ( * ) 1UL<sent>
+                    (Array.length events |> Checked.uint64) * 1UL<sent>
 
                 sendMsg fromAddr (StoreAck (addr, numEventsSent))
 

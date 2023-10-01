@@ -174,8 +174,8 @@ test
 
         let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
 
-        replica.Recv(StoreNew events)
-        controlReplica.Recv(StoreNew events)
+        replica.Recv (StoreNew events)
+        controlReplica.Recv (StoreNew events)
 
         replica.Recv (Sync replica.Addr)
 
