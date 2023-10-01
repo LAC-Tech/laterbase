@@ -18,7 +18,7 @@ module Range =
 type Probability = {Min: float; Max: float}
 
 module Probability =
-    let sync = {Min = 0.0; Max = 0.01}
+    let sync = {Min = 0.0; Max = 0.001}
     let recvEvents = {Min = 0.0; Max = 1.0}
 
 module Rand =
@@ -52,10 +52,8 @@ module Rand =
 type Stats = {
     mutable TotalMessages: uint64
     mutable NewEvents: uint64
-    mutable EventsSent: uint64
+    mutable EventsSent: ResizeArray<uint64>;
 }
-
-let formatNum (n: uint64) = System.String.Format("{0:n0}", n)
 
 /// In-memory replicas that send messages immediately
 /// TODO: "you can make it not so easy..."
@@ -63,7 +61,7 @@ let replicaNetwork<'e> addrs =
     let stats = {
         TotalMessages = 0UL
         NewEvents = 0UL
-        EventsSent = 0UL  
+        EventsSent = ResizeArray()
     }
     let network = ResizeArray<IReplica<'e>>()
     let sendMsg addr msg =
@@ -73,7 +71,7 @@ let replicaNetwork<'e> addrs =
         | StoreNew newEvents -> 
             stats.NewEvents <- stats.NewEvents + (newEvents |> Array.uLength)
         | Store (es, _, _) ->
-            stats.EventsSent <- stats.EventsSent + (es |> Array.uLength)
+            stats.EventsSent.Add(Array.uLength es)
         | _ -> ()
 
         network.Find(fun r -> r.Addr = addr).Recv msg
@@ -147,9 +145,10 @@ let main args =
     printfn "Simulation is complete."
     printfn $"Simulated time = {simTimeSpan}, Real time = {ts}"
     printfn $"Statistics for {Array.length replicas} replicas:"
-    printfn $"- {formatNum stats.TotalMessages}\tmessages sent"
-    printfn $"- {formatNum stats.NewEvents}\tevents generated"
-    printfn $"- {formatNum stats.EventsSent}\tevents sent across network" 
+    printfn $"- Messages sent = {stats.TotalMessages:n0}"
+    printfn $"- Events generated = {stats.NewEvents:n0}"
+    printfn $"- Events sent = {stats.EventsSent |> Seq.sum:n0}\t" 
+    printfn $"- Avg events per msg = {stats.EventsSent |> Seq.averageBy float:n0}" 
     printfn "View Replication Inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas replicas
