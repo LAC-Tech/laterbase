@@ -9,6 +9,7 @@ module Laterbase.Core
 open System
 open System.Collections.Generic
 open System.Runtime.CompilerServices
+open System.Threading.Tasks
 
 open NetUlid
 
@@ -72,10 +73,8 @@ let mPerH: int64<m/h> = 60L<m/h>
 type Address(id: byte array) =
     member _.Id = id
     // Hex string for compactness
-    override this.ToString() =
-        this.Id
-        |> Array.map (fun b -> b.ToString("X2"))
-        |> String.concat ""
+    override this.ToString() = 
+        this.Id |> Array.map (sprintf "%X") |> String.concat ""
 
 /// IDs must be globally unique and orderable. They should contain within
 /// them the physical valid time. This is so clients can generate their own
@@ -92,13 +91,19 @@ type EventID(timestamp: int64<valid ms>, tenRandomBytes: byte array) =
 [<Struct; IsReadOnly>]
 type EventVal<'payload> = {Origin: Address; Payload: 'payload}
 
-type Event<'payload> = EventID * EventVal<'payload>
+type Events<'payload> = (EventID * EventVal<'payload>) array
+
+module Events =
+    let view es = Seq.map (fun (k, v) -> (k, v.Origin, v.Payload)) es
+    let create addr =
+        let toEvents (id, payload) = (id, {Origin = addr; Payload = payload})
+        Array.map toEvents
 
 // All of the messages must be idempotent
 type Message<'payload> =
     | Sync of destAddr: Address
-    | Store of 
-        events: Event<'payload> array *
+    | Store of
+        events: Events<'payload> *
         fromAddr: Address * 
         numEventsReceived: uint64<received>
     /// This halves the number of events sent across network in simulator
@@ -119,17 +124,17 @@ type Query = {
 }
 
 module Query =
-    let inTxnOrder<'k, 'v> (events: OrderedDict<'k, 'v>) appendLog since =
+    let inTxnOrder<'k, 'v> (eventTable: OrderedDict<'k, 'v>) appendLog since =
         appendLog
         |> Seq.skip (Checked.int since - 1)
-        |> Seq.choose events.GetKeyValue
+        |> Seq.choose eventTable.GetKeyValue
 
-    let execute (events: OrderedDict<'k, 'v>) appendLog query =
+    let execute (eventTable: OrderedDict<'k, 'v>) appendLog query =
         match query.ByTime with
-        | PhysicalValid -> events |> Seq.skip (int query.Limit) 
+        | PhysicalValid -> eventTable |> Seq.skip (int query.Limit) 
         | LogicalTxn ->
             let since = (uint64 query.Limit) * 1UL<sent>
-            inTxnOrder events appendLog since
+            inTxnOrder eventTable appendLog since
 
 
 /// For local databases - can see implementation details
@@ -145,8 +150,8 @@ type View<'payload> = {
 
 type IReplica<'payload> =
     abstract member Addr: Address
-    abstract member Read: query: Query -> Event<'payload> array
-    abstract member View: unit -> View<'payload>
+    abstract member Read: query: Query -> Task<Events<'payload>>
+    abstract member View: unit -> Task<View<'payload>>
     abstract member Recv: Message<'payload> -> unit
 
 /// These are for errors I consider to be un-recoverable.
@@ -200,7 +205,7 @@ type LogicalClock private (dict:OrderedDict<Address, Counter>) =
             seq().GetEnumerator()
 
 type private LocalReplica<'payload> (addr, sendMsg) =
-    let events = OrderedDict<EventID, EventVal<'payload>>()
+    let eventTable = OrderedDict<EventID, EventVal<'payload>>()
     (**
         This is linear, and so imposes a total order on a partial order.
         TODO: added another array that keeps track of which were concurrent?
@@ -210,41 +215,42 @@ type private LocalReplica<'payload> (addr, sendMsg) =
 
     // Only add to the append log if the event does not already exist
     let addEvent (k, v: EventVal<'payload>) = 
-        if events.TryAdd(k, v) then appendLog.Add k
+        if eventTable.TryAdd(k, v) then appendLog.Add k
 
     member private self.CrashIf(condition, msg) =
         if condition then
             raise (ReplicaConstraintViolation(msg, self))
 
     member private self.CheckAppendLog() =
-        self.CrashIf(events.Count > appendLog.Count, "Append log is too short")
-        self.CrashIf(events.Count < appendLog.Count, "Append log is too long")
+        self.CrashIf(eventTable.Count > appendLog.Count, "Append log is too short")
+        self.CrashIf(eventTable.Count < appendLog.Count, "Append log is too long")
     
     interface IReplica<'payload> with
         member val Addr = addr
         member self.Read(query) = 
             self.CheckAppendLog()
-            Array.ofSeq (Query.execute events appendLog query)
+            Array.ofSeq (Query.execute eventTable appendLog query)
+            |> Task.FromResult
 
         member self.View() =
-            let events = 
-                {ByTime = PhysicalValid; Limit = 0}
-                |> (self :> IReplica<'payload>).Read
-                |> Seq.map (fun (k, v) -> (k, v.Origin, v.Payload))
+            let self = self :> IReplica<'payload> 
 
             let debug: DebugView = {
                 AppendLog = appendLog
                 LogicalClock = logicalClock
             }
 
-            {Events = events; Debug = Some debug}
+            task {
+                let! es = self.Read {ByTime = PhysicalValid; Limit = 0}
+                return { Events = Events.view es; Debug = Some debug }
+            }
 
         member self.Recv (msg: Message<'payload>) =
             match msg with
             | Sync destAddr ->
                 let events =
                     logicalClock.GetSent(destAddr)
-                    |> Query.inTxnOrder events appendLog
+                    |> Query.inTxnOrder eventTable appendLog
                     |> Seq.toArray
 
                 let numEventsReceived =
@@ -265,9 +271,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
                 logicalClock.UpdateSent(fromAddr, numEventsSent)
             
             | StoreNew idPayloadPairs ->
-                let toEvents (id, payload) = 
-                    (id, {Origin = addr; Payload = payload})
-                let events = Array.map toEvents idPayloadPairs
+                let events = Events.create addr idPayloadPairs 
                 Array.iter addEvent events
                 self.CheckAppendLog()
 
