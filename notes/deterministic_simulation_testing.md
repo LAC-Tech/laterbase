@@ -186,7 +186,7 @@ https://www.youtube.com/watch?v=4fFDFbi3toc
 
 - They **do** use actor model concurrency in the simulation.
 
-- They make use of futures in the simulation. TODO: how are they different from oromises again?
+- They make use of futures in the simulation. TODO: how are they different from [romises again?
 
 - Their actual C++ implementation is horrifying. Ignoring it for my sanity.
 

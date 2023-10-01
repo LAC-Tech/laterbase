@@ -13,15 +13,14 @@ Events can only be added, never removed.
 
 Events can be queried by Transaction Time (when they written to a DB) and Valid Time (when they happened in the real world).
 
-
-
 ## High level architecture
 
 ```mermaid
 erDiagram
-    Server ||--o{ DB : ""
+    Replica ||--o{ DB : ""
     DB ||--|| EventStream : ""
-    DB ||--|| VectorClock : ""
+    DB ||--|| AppendLog : ""
+    DB ||--|| LogicalClock. : ""
     
     
 ```
@@ -135,15 +134,15 @@ One LMDB env per aggregate root. IE a single LMDB env has an event database as w
 
 Modelling the entire database as a grow only set, using delta states.
 
+.l
+
 ### FAQ
 
-#### Why not Kafka?
+#### Why make this when Kafka exists?
 
 - Has clients and servers - I want to do something multi-master.
 
-- Streams events are not designed for querying directly, that's what views are for.
-
-#### Why LMDB?
+#### Why plan on using LMDB as a backing store?
 
 Not 100% that LMDB should be the server side backing store. But I like it because...
 
@@ -155,7 +154,7 @@ Not 100% that LMDB should be the server side backing store. But I like it becaus
 
 #### Why not LMDB?
 
-- Theoretically an LSM might be better for fast write speeds. TODO: actually measure this.
+- Theoretically an LSM tree might be better for fast write speeds. TODO: actually measure this.
 - Only one writer at a time
 
 #### Why Rust?
@@ -167,6 +166,12 @@ Not 100% that LMDB should be the server side backing store. But I like it becaus
 - kind of functional, which is nice
 - tooling is great
 
+##### Why Axum?
+
+- Backed by Tokio-rs, which has been around in rust for a long time
+- Nicer API than Actix-web
+- Makes sense to me!
+
 #### Why not Zig?
 
 - Not 1.0 yet
@@ -174,11 +179,7 @@ Not 100% that LMDB should be the server side backing store. But I like it becaus
 - Less expressive than rust
 - Unused variables when debugging & testing is *fine* and I will not be shamed into thinking otherwise.
 
-#### Why Axum?
 
-- Backed by Tokio-rs, which has been around in rust for a long time
-- Nicer API than Actix-web
-- Makes sense to me!
 
 ## References
 
