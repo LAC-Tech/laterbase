@@ -28,7 +28,6 @@ module Task =
     let iter f t = task {
         let! x = t
         f x
-        return ()
     }
 
     let map f t = task {
