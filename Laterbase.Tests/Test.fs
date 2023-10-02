@@ -44,182 +44,175 @@ test
     "Can read back the events you store"
     (fun (inputEvents: (EventID * int64) array) (addr: Address) ->
         let r = localReplica(addr, fun _ _ -> ())
-        let equalityReults = seq {
-            for _ in 1..100 do
-                r.Recv (StoreNew inputEvents)
+        
+        r.Recv (StoreNew inputEvents)
 
-                // Replica will not store duplicates
-                let inputEvents = 
-                    inputEvents |> Array.distinctBy (fun (k, _) -> k) 
+        // Replica will not store duplicates
+        let inputEvents = 
+            inputEvents |> Array.distinctBy (fun (k, _) -> k) 
 
-                let outputEvents = r.Read({ByTime = LogicalTxn; Limit = 0})
-
-                task {
-                    let! outputEvents = outputEvents
-                    let outputEvents = 
-                        outputEvents 
-                        |> Seq.map (fun (k, v) -> (k, v.Payload))
-                        |> Seq.toArray
-
-                    return inputEvents = outputEvents
-                }
-        }
-
-        task {
-            let! x = equalityReults |> System.Threading.Tasks.Task.WhenAll
-            return x |> Seq.forall id
-        }
+        r.Read({ByTime = LogicalTxn; Limit = 0}) 
+        |> Task.map (fun outputEvents -> 
+            inputEvents = (
+                outputEvents 
+                |> Seq.map (fun (k, v) -> (k, v.Payload))
+                |> Seq.toArray
+            )
+        )
     )
 
-// /// In-memory replicas that send messages immediately
-// let replicaNetwork<'e> addrs =
-//     let network = ResizeArray<IReplica<'e>>()
-//     let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
-//     let replicas = addrs |> Array.map (fun addr -> localReplica(addr, sendMsg))
-//     network.AddRange(replicas)
-//     replicas
+/// In-memory replicas that send messages immediately
+let replicaNetwork<'e> addrs =
+    let network = ResizeArray<IReplica<'e>>()
+    let sendMsg addr = network.Find(fun r -> r.Addr = addr).Recv
+    let replicas = addrs |> Array.map (fun addr -> localReplica(addr, sendMsg))
+    network.AddRange(replicas)
+    replicas
 
-// let oneTestReplica addr = replicaNetwork [|addr|].[0]
+let oneTestReplica addr = replicaNetwork [|addr|].[0]
 
-// let twoTestReplicas (addr1, addr2) =
-//     let rs = replicaNetwork [|addr1; addr2|]
-//     (rs[0], rs[1])
+let twoTestReplicas (addr1, addr2) =
+    let rs = replicaNetwork [|addr1; addr2|]
+    (rs[0], rs[1])
 
-// let threeTestReplicas (addr1, addr2, addr3) =
-//     let rs = replicaNetwork  [|addr1; addr2; addr3|]
-//     (rs[0], rs[1], rs[2])
+let threeTestReplicas (addr1, addr2, addr3) =
+    let rs = replicaNetwork  [|addr1; addr2; addr3|]
+    (rs[0], rs[1], rs[2])
 
-// (*
-//     Sometimes I create two different networks where replicas have the same event payloads. So each have their own state and I can test algebraic properties.
+(*
+    Sometimes I create two different networks where replicas have the same event payloads. So each have their own state and I can test algebraic properties.
 
-//     In this scenario, I expect the payload values to converge, but the origin addresses will of course be different.
-// *)
-// type Connection = SameNetwork | DifferentNetworks
+    In this scenario, I expect the payload values to converge, but the origin addresses will of course be different.
+*)
+type Connection = SameNetwork | DifferentNetworks
 
-// let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
-//     let query = {ByTime = PhysicalValid; Limit = 0}
+let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
+    let query = {ByTime = PhysicalValid; Limit = 0}
 
-//     let es1 = r1.Read(query)
-//     let es2 = r2.Read(query)
+    let es1 = r1.Read(query)
+    let es2 = r2.Read(query)
 
-//     let converged =
-//         match connection with
-//         | SameNetwork -> Seq.equal es1 es2
-//         | DifferentNetworks -> 
-//             let es1 = es1 |> Seq.map (fun (k, v) -> (k, v.Payload))
-//             let es2 = es2 |> Seq.map (fun (k, v) -> (k, v.Payload))
+    [|es1; es2|] |> Task.all |> Task.map(fun ess ->
+        let (es1, es2) = (ess[0], ess[1]) 
+        let converged =
+            match connection with
+            | SameNetwork -> Seq.equal es1 es2
+            | DifferentNetworks -> 
+                let es1 = es1 |> Seq.map (fun (k, v) -> (k, v.Payload))
+                let es2 = es2 |> Seq.map (fun (k, v) -> (k, v.Payload))
 
-//             Seq.equal es1 es2
+                Seq.equal es1 es2
+        
+        if not converged then
+            eprintfn "Replicas did not converge"
+            openInspector [|r1; r2|]
+
+        converged
+    )
+
+test 
+    "two databases will have the same events if they sync with each other"
+    (fun
+        ((addr1, addr2) : (Address * Address))
+        (events1 : (EventID * int) array)
+        (events2 : (EventID * int) array) ->
     
-//     if not converged then
-//         eprintfn "Replicas did not converge"
-//         openInspector [|r1; r2|]
+        let (r1, r2) = twoTestReplicas(addr1, addr2)
 
-//     converged
+        // Populate the two databases with separate events
+        r1.Recv(StoreNew events1)
+        r2.Recv(StoreNew events2)
 
-// test 
-//     "two databases will have the same events if they sync with each other"
-//     (fun
-//         ((addr1, addr2) : (Address * Address))
-//         (events1 : (EventID * int) array)
-//         (events2 : (EventID * int) array) ->
-    
-//         let (r1, r2) = twoTestReplicas(addr1, addr2)
+        // Bi-directional sync
+        r1.Recv(Sync r2.Addr)
+        r2.Recv(Sync r1.Addr)
 
-//         // Populate the two databases with separate events
-//         r1.Recv(StoreNew events1)
-//         r2.Recv(StoreNew events2)
+        replicasConverged SameNetwork r1 r2        
+    )
 
-//         // Bi-directional sync
-//         r1.Recv(Sync r2.Addr)
-//         r2.Recv(Sync r1.Addr)
+(*
+    Merging state-based CRDTs should be
+    - commutative
+    - idempotent
+    - associative
 
-//         replicasConverged SameNetwork r1 r2        
-//     )
+    (Definition 2.3, Marc Shapiro, Nuno Preguiça, Carlos Baquero, and Marek Zawirski. Conflict-free replicated data types)
+*)
 
-// (*
-//     Merging state-based CRDTs should be
-//     - commutative
-//     - idempotent
-//     - associative
+test
+    "syncing is commutative"
+    (fun
+        ((addrA1, addrB1, addrA2, addrB2) : 
+            (Address * Address * Address * Address))
+        (eventsA : (EventID * int) array)
+        (eventsB : (EventID * int) array) ->
 
-//     (Definition 2.3, Marc Shapiro, Nuno Preguiça, Carlos Baquero, and Marek Zawirski. Conflict-free replicated data types)
-// *)
+        let (rA1, rB1) = twoTestReplicas(addrA1, addrB1)
+        let (rA2, rB2) = twoTestReplicas(addrA2, addrB2)
 
-// test
-//     "syncing is commutative"
-//     (fun
-//         ((addrA1, addrB1, addrA2, addrB2) : 
-//             (Address * Address * Address * Address))
-//         (eventsA : (EventID * int) array)
-//         (eventsB : (EventID * int) array) ->
+        // A replicas have same events
+        rA1.Recv(StoreNew eventsA)
+        rA2.Recv(StoreNew eventsA)
 
-//         let (rA1, rB1) = twoTestReplicas(addrA1, addrB1)
-//         let (rA2, rB2) = twoTestReplicas(addrA2, addrB2)
+        // B replicas have same events
+        rB1.Recv(StoreNew eventsB)
+        rB2.Recv(StoreNew eventsB)
 
-//         // A replicas have same events
-//         rA1.Recv(StoreNew eventsA)
-//         rA2.Recv(StoreNew eventsA)
+        // Sync 1 & 2 in different order; a . b = b . a
+        rB1.Recv(Sync rA1.Addr)
+        rA2.Recv(Sync rB2.Addr)
 
-//         // B replicas have same events
-//         rB1.Recv(StoreNew eventsB)
-//         rB2.Recv(StoreNew eventsB)
+        replicasConverged DifferentNetworks rA1 rB2
+    )
 
-//         // Sync 1 & 2 in different order; a . b = b . a
-//         rB1.Recv(Sync rA1.Addr)
-//         rA2.Recv(Sync rB2.Addr)
+test
+    "syncing is idempotent"
+    (fun
+        (addr: Address)
+        (controlAddr: Address)
+        (events : (EventID * EventVal<int>) array) ->
 
-//         replicasConverged DifferentNetworks rA1 rB2
-//     )
+        let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
 
-// test
-//     "syncing is idempotent"
-//     (fun
-//         (addr: Address)
-//         (controlAddr: Address)
-//         (events : (EventID * EventVal<int>) array) ->
+        replica.Recv (StoreNew events)
+        controlReplica.Recv (StoreNew events)
 
-//         let (replica, controlReplica) = twoTestReplicas(addr, controlAddr)
+        replica.Recv (Sync replica.Addr)
 
-//         replica.Recv (StoreNew events)
-//         controlReplica.Recv (StoreNew events)
+        replicasConverged DifferentNetworks replica controlReplica
+    )
 
-//         replica.Recv (Sync replica.Addr)
+test
+    "syncing is associative"
+    (fun
+        ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
+        (Address * Address * Address * Address * Address * Address))
+        (eventsA : (EventID * int) array)
+        (eventsB : (EventID * int) array)
+        (eventsC : (EventID * int) array) ->
 
-//         replicasConverged DifferentNetworks replica controlReplica
-//     )
+        let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
+        let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)
 
-// test
-//     "syncing is associative"
-//     (fun
-//         ((addrA1, addrB1, addrC1, addrA2, addrB2, addrC2) : 
-//         (Address * Address * Address * Address * Address * Address))
-//         (eventsA : (EventID * int) array)
-//         (eventsB : (EventID * int) array)
-//         (eventsC : (EventID * int) array) ->
+        // A replicas have same events
+        rA1.Recv (StoreNew eventsA)
+        rA2.Recv (StoreNew eventsA)
 
-//         let (rA1, rB1, rC1) = threeTestReplicas(addrA1, addrB1, addrC1)
-//         let (rA2, rB2, rC2) = threeTestReplicas(addrA2, addrB2, addrC2)
+        // B replicas have same events
+        rB1.Recv (StoreNew eventsB)
+        rB2.Recv (StoreNew eventsB)
 
-//         // A replicas have same events
-//         rA1.Recv (StoreNew eventsA)
-//         rA2.Recv (StoreNew eventsA)
+        // C replicas have same events
+        rC1.Recv (StoreNew eventsC)
+        rC2.Recv (StoreNew eventsC)
 
-//         // B replicas have same events
-//         rB1.Recv (StoreNew eventsB)
-//         rB2.Recv (StoreNew eventsB)
+        // (a . b) . c
+        rB1.Recv (Sync rA1.Addr)
+        rA1.Recv (Sync rC1.Addr)
 
-//         // C replicas have same events
-//         rC1.Recv (StoreNew eventsC)
-//         rC2.Recv (StoreNew eventsC)
+        // a . (b . c)
+        rC2.Recv (Sync rB2.Addr)
+        rB2.Recv (Sync rA2.Addr)
 
-//         // (a . b) . c
-//         rB1.Recv (Sync rA1.Addr)
-//         rA1.Recv (Sync rC1.Addr)
-
-//         // a . (b . c)
-//         rC2.Recv (Sync rB2.Addr)
-//         rB2.Recv (Sync rA2.Addr)
-
-//         replicasConverged DifferentNetworks rC1 rA2
-//     )
+        replicasConverged DifferentNetworks rC1 rA2
+    )

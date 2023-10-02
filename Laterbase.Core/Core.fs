@@ -42,6 +42,8 @@ module Task =
         return! f x
     }
 
+    let all (ts: Task<'a> array) = Task.WhenAll ts
+
 // Trying to hide it all so I can swap it out later.
 type OrderedDict<'k, 'v> private(innerDict: SortedDictionary<'k, 'v>) =
     let seq () = innerDict |> Seq.map (fun kvp -> (kvp.Key, kvp.Value))

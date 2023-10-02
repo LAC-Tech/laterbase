@@ -112,8 +112,7 @@ let replicas (rs: IReplica<'e> array) =
         )
 
         rs[0].View() |> Task.iter (fun rv -> 
-            let view = new Replica<'e>(rv)
-            replicaFrame.Add view
+            replicaFrame.Add (new Replica<'e>(rv))
         )
 
        
@@ -121,7 +120,10 @@ let replicas (rs: IReplica<'e> array) =
         replicaList.add_SelectedItemChanged(fun args ->
             let addr = args.Value :?> Address
             let replica = rs |> Array.find (fun r -> r.Addr = addr)
-            replicaFrame.Add (new Replica<'e>(replica))
+
+            replica.View() |> Task.iter (fun rv -> 
+                replicaFrame.Add (new Replica<'e>(rv))
+            )
         )
 
         window.Add(replicaListFrame, replicaFrame)
