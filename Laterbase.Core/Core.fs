@@ -25,10 +25,12 @@ module Array =
     let uLength a = (Array.length >> Checked.uint64) a
 
 module Task =
-    let iter f t = task {
-        let! x = t
-        f x
-    }
+    let iter f t =
+        task {
+            let! x = t
+            f x
+        }
+        |> ignore
 
     let map f t = task {
         let! x = t

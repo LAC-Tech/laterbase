@@ -111,11 +111,10 @@ let replicas (rs: IReplica<'e> array) =
             Height = Dim.Percent(75.0f)
         )
 
-        task {
-            let! rv = rs[0].View()
-            replicaFrame.Add (new Replica(rv))
-            return ()
-        } |> ignore
+        rs[0].View() |> Task.iter (fun rv -> 
+            let view = new Replica<'e>(rv)
+            replicaFrame.Add view
+        )
 
        
 
