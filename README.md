@@ -8,7 +8,7 @@ Laterbase is an event store that syncs. It stores both when an event happened in
 
 [Business](notes/business.md)
 
-[Technical](nodes/technical.md)
+[Technical](notes/technical.md)
 
 ## Roadmap
 
