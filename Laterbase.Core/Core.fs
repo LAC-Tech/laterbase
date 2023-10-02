@@ -22,7 +22,25 @@ module Seq =
         Seq.forall2 (=) s1 s2
 
 module Array =
-    let uLength a = (Array.length >> Checked.uint64) a
+    let uLength a = (Array.length >> Checked.uint64)
+
+module Task =
+    let iter f t = task {
+        let! x = t
+        f x
+        return ()
+    }
+
+    let map f t = task {
+        let! x = t
+        return f x
+    }
+
+    let bind (f: 'a -> Task<'b>) t = task {
+        let! x = t
+        let! y = f x
+        return y
+    }
 
 // Trying to hide it all so I can swap it out later.
 type OrderedDict<'k, 'v> private(innerDict: SortedDictionary<'k, 'v>) =
@@ -214,8 +232,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
         if eventTable.TryAdd(k, v) then appendLog.Add k
 
     member private self.CrashIf(condition, msg) =
-        if condition then
-            raise (ReplicaConstraintViolation(msg, self))
+        if condition then raise (ReplicaConstraintViolation(msg, self))
 
     member private self.CheckAppendLog() =
         self.CrashIf(eventTable.Count > appendLog.Count, "Append log is too short")

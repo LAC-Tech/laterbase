@@ -1,10 +1,11 @@
 ﻿module Laterbase.Inspect
 
 open System
+open System.Threading.Tasks
 open Terminal.Gui
 open Laterbase.Core
 
-type private Replica<'e>(replica: IReplica<'e>) =
+type private Replica<'e>(replicaView: View<'e>) =
     inherit TabView(
         X = 0,
         Y = 0,
@@ -13,7 +14,7 @@ type private Replica<'e>(replica: IReplica<'e>) =
     )
 
     do 
-        let view = replica.View()
+        let view = replicaView
         let events = view.Events
 
         let eventsDt = new Data.DataTable()
@@ -110,7 +111,13 @@ let replicas (rs: IReplica<'e> array) =
             Height = Dim.Percent(75.0f)
         )
 
-        replicaFrame.Add (new Replica<'e>(rs[0]))
+        task {
+            let! rv = rs[0].View()
+            replicaFrame.Add (new Replica(rv))
+            return ()
+        } |> ignore
+
+       
 
         replicaList.add_SelectedItemChanged(fun args ->
             let addr = args.Value :?> Address
