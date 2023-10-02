@@ -22,7 +22,7 @@ module Seq =
         Seq.forall2 (=) s1 s2
 
 module Array =
-    let uLength a = (Array.length >> Checked.uint64)
+    let uLength a = (Array.length >> Checked.uint64) a
 
 module Task =
     let iter f t = task {
