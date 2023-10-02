@@ -60,9 +60,7 @@ This is my take on a delta-state CRDT. These messages are idempotent, and if the
 
 ```mermaid
 sequenceDiagram
-    participant A
-    participant B
-    A->>B: Request B sends all the events it thinks B doesn't have
+    A->>B: Reques that B sends all the events it thinks A doesn't have
     B->>A: On receiept A stores all events that aren't duplicates, and updates logical clock
     A->>B: A sends an acknowledgment back to B, which updates B's logical clock so it doesn't send the same events again.
 ```
