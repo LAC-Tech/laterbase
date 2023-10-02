@@ -38,8 +38,7 @@ module Task =
 
     let bind (f: 'a -> Task<'b>) t = task {
         let! x = t
-        let! y = f x
-        return y
+        return! f x
     }
 
 // Trying to hide it all so I can swap it out later.
