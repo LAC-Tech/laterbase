@@ -1,5 +1,6 @@
-﻿/// Deterministic Core of Laterbase
+﻿/// <summary>Deterministic Core of Laterbase</summary>
 /// The following is strictly forbidden:
+///
 /// - RNG calls
 /// - System Time calls
 /// - Hashmaps
@@ -9,7 +10,6 @@ module Laterbase.Core
 open System
 open System.Collections.Generic
 open System.Runtime.CompilerServices
-open System.Threading.Tasks
 
 open NetUlid
 
@@ -24,25 +24,23 @@ module Seq =
 module Array =
     let uLength a = (Array.length >> Checked.uint64) a
 
-module Task =
-    let iter f t =
-        task {
-            let! x = t
-            f x
-        }
-        |> ignore
+(*
+    Don't yet know enough but Task or Async, and don't want to tie myself down to their semantics.
 
-    let map f t = task {
-        let! x = t
-        return f x
-    }
+    In the future I may implement the 'non-immediate' version with those things, or maybe something else entirely. Who knows.
 
-    let bind (f: 'a -> Task<'b>) t = task {
-        let! x = t
-        return! f x
-    }
+    "We all have a Future" - Erik Meijer
+*)
+type Future<'a> = 
+    | Immediate of 'a
+    // TODO: actual concurrent case
 
-    let all (ts: Task<'a> array) = Task.WhenAll ts
+module Future =
+    let iter (f: 'a -> unit) (Immediate x) = f x
+    let map f (Immediate x) = Immediate (f x)
+    let bind (f: 'a -> Future<'b>) (Immediate x) = f x
+    let all<'a> (fs: Future<'a> seq) = 
+        Seq.map (fun (Immediate x) -> x) fs |> Immediate
 
 // Trying to hide it all so I can swap it out later.
 type OrderedDict<'k, 'v> private(innerDict: SortedDictionary<'k, 'v>) =
@@ -98,9 +96,11 @@ type Address(id: byte array) =
 /// IDs must be globally unique and orderable. They should contain within
 /// them the physical valid time. This is so clients can generate their own
 /// IDs.
+///
 /// Valid time is used so:
 /// - replicas can create their own IDs
 /// - we can backdate
+///
 /// TODO: make sure the timestamp is not greater than current time.
 [<Struct; IsReadOnly>]
 type EventID(timestamp: int64<valid ms>, tenRandomBytes: byte array) =
@@ -168,8 +168,8 @@ type View<'payload> = {
 
 type IReplica<'payload> =
     abstract member Addr: Address
-    abstract member Read: query: Query -> Task<Events<'payload>>
-    abstract member View: unit -> Task<View<'payload>>
+    abstract member Read: query: Query -> Future<Events<'payload>>
+    abstract member View: unit -> Future<View<'payload>>
     abstract member Recv: Message<'payload> -> unit
 
 /// These are for errors I consider to be un-recoverable.
@@ -245,7 +245,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
         member self.Read(query) = 
             self.CheckAppendLog()
             Array.ofSeq (Query.execute eventTable appendLog query)
-            |> Task.FromResult
+            |> Immediate
 
         member self.View() =
             let self = self :> IReplica<'payload> 
@@ -255,10 +255,11 @@ type private LocalReplica<'payload> (addr, sendMsg) =
                 LogicalClock = logicalClock
             }
 
-            task {
-                let! es = self.Read {ByTime = PhysicalValid; Limit = 0}
-                return { Events = Events.view es; Debug = Some debug }
-            }
+            self.Read {ByTime = PhysicalValid; Limit = 0}
+            |> Future.map(fun es -> {
+                Events = Events.view es;
+                Debug = Some debug
+            })
 
         member self.Recv (msg: Message<'payload>) =
             match msg with

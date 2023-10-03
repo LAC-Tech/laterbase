@@ -51,14 +51,15 @@ test
         let inputEvents = 
             inputEvents |> Array.distinctBy (fun (k, _) -> k) 
 
-        r.Read({ByTime = LogicalTxn; Limit = 0}) 
-        |> Task.map (fun outputEvents -> 
+        r.Read({ByTime = LogicalTxn; Limit = 0})
+        |> Future.map (fun outputEvents -> 
             inputEvents = (
                 outputEvents 
                 |> Seq.map (fun (k, v) -> (k, v.Payload))
                 |> Seq.toArray
             )
         )
+        |> (fun (Immediate x) -> x)
     )
 
 /// In-memory replicas that send messages immediately
@@ -92,8 +93,8 @@ let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
     let es1 = r1.Read(query)
     let es2 = r2.Read(query)
 
-    [|es1; es2|] |> Task.all |> Task.map(fun ess ->
-        let (es1, es2) = (ess[0], ess[1]) 
+    [|es1; es2|] |> Future.all |> Future.map(fun ess ->
+        let (es1, es2) = (Seq.item 0 ess, Seq.item 1 ess)
         let converged =
             match connection with
             | SameNetwork -> Seq.equal es1 es2
@@ -109,6 +110,7 @@ let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
 
         converged
     )
+    |> (fun (Immediate x) -> x)
 
 test 
     "two databases will have the same events if they sync with each other"

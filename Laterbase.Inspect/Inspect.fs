@@ -111,17 +111,15 @@ let replicas (rs: IReplica<'e> array) =
             Height = Dim.Percent(75.0f)
         )
 
-        rs[0].View() |> Task.iter (fun rv -> 
+        rs[0].View() |> Future.iter (fun rv -> 
             replicaFrame.Add (new Replica<'e>(rv))
         )
-
-       
 
         replicaList.add_SelectedItemChanged(fun args ->
             let addr = args.Value :?> Address
             let replica = rs |> Array.find (fun r -> r.Addr = addr)
 
-            replica.View() |> Task.iter (fun rv -> 
+            replica.View() |> Future.iter (fun rv -> 
                 replicaFrame.Add (new Replica<'e>(rv))
             )
         )

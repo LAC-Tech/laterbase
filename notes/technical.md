@@ -20,7 +20,7 @@ erDiagram
     Replica ||--o{ DB : ""
     DB ||--|| EventTable : ""
     DB ||--|| AppendLog : ""
-    DB ||--|| LogicalClock. : ""
+    DB ||--|| LogicalClock : ""
 ```
 
 ## Data Structures

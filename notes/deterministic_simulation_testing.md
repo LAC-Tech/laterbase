@@ -1,5 +1,3 @@
-# Determinstic Simulation Testing
-
 ## SimTigerBeetle (Director's Cut!)
 
 https://www.youtube.com/watch?v=Vch4BWUVzMM
