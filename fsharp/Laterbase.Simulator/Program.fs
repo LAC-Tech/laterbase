@@ -3,7 +3,6 @@
 module Laterbase.Simulator
 
 open System
-open Laterbase
 open Laterbase.Core
 
 type Range = {Min: int; Max: int}
@@ -70,7 +69,7 @@ let replicaNetwork<'e> addrs =
         match msg with
         | StoreNew newEvents -> 
             stats.NewEvents <- stats.NewEvents + (newEvents |> Array.uLength)
-        | Store (es, _, _) ->
+        | Store {Events = es; } ->
             stats.EventsSent.Add(Array.uLength es)
         | _ -> ()
 
@@ -123,8 +122,7 @@ let main args =
         for replica in replicas do
             if Rand.bool rng Probability.sync then
                 let destReplica = replicaExcept replica
-                Sync (destReplica.Addr, destReplica.Count)
-                |> sendMsg replica.Addr
+                destReplica.Recv (ReplicateFrom replica.Addr)
 
             if Rand.bool rng Probability.recvEvents then
                 let numEvents = Rand.int rng Range.eventsPerTick
@@ -164,7 +162,3 @@ let main args =
     *)
 
     0
-
-(*
-    
-*)

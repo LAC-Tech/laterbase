@@ -120,13 +120,14 @@ module Events =
 module Message =
     type SendSince = {Counter: uint64<counter>; Src: Address}
     type Store<'payload> = {
+        Events: Events<'payload>;
         Until: uint64<counter>;
         Src: Address;
-        Events: Events<'payload>
     }
 
 // All of the messages must be idempotent
 type Message<'payload> =
+    | ReplicateFrom of destAddr: Address
     | SendSince of Message.SendSince
     | Store of Message.Store<'payload>
     | StoreNew of (EventID * 'payload) array
@@ -159,7 +160,6 @@ type IReplica<'payload> =
     abstract member Addr: Address
     abstract member Read: query: Query -> Future<Events<'payload>>
     (* abstract member View: unit -> Future<View<'payload>> *)
-    abstract member Sync: dest: Address -> unit
     abstract member Recv: Message<'payload> -> unit
 
 /// These are for errors I consider to be un-recoverable.
@@ -198,10 +198,15 @@ type private LocalReplica<'payload> (addr, sendMsg) =
         This is linear, and so imposes a total order on a partial order.
         TODO: added another array that keeps track of which were concurrent?
     *)
-    let appendLog = ResizeArray<EventID * EventVal<'payload>>()
-    let logicalClock = LogicalClock()
+    let log = ResizeArray<EventID * EventVal<'payload>>()
 
-    let addEvent (k, v) = appendLog.Add(k, v)
+    // The following two data structures are 'operational indexes'.
+    // They are not a source of truth, and can be built by the log.
+    let logicalClock = LogicalClock()
+    let eventIdIndex: OrderedDict<EventID, EventVal<'payload>> = OrderedDict()
+
+    let addEvent (k, v) = 
+        if eventIdIndex.TryAdd (k, v) then log.Add(k, v)
 
     let intToCounter = Checked.uint64 >> ( * ) 1UL<counter>
     
@@ -210,11 +215,11 @@ type private LocalReplica<'payload> (addr, sendMsg) =
         member _.Read(query) = 
             let seq = 
                 match query.ByTime with
-                | LogicalTxn -> appendLog |> Seq.skip query.Limit
+                | LogicalTxn -> log |> Seq.skip query.Limit
                 // Very naive but only used in inspector
                 | PhysicalValid -> 
                     let idSorted = OrderedDict()
-                    for (k, v) in appendLog do
+                    for (k, v) in log do
                         if not (idSorted.TryAdd(k, v)) then
                             failwith "duplicate events in log"
 
@@ -237,20 +242,18 @@ type private LocalReplica<'payload> (addr, sendMsg) =
             })
         *)
 
-        member self.Sync (destAddr: Address) =
-            let msg = SendSince {
-                Src = addr;
-                Counter = logicalClock.Get(destAddr)
-             } in
-             
-             msg |> sendMsg destAddr
-
         member self.Recv (msg: Message<'payload>) =
             match msg with
+            | ReplicateFrom destAddr ->
+                SendSince {
+                    Src = addr;
+                    Counter = logicalClock.Get(destAddr)
+                } 
+                |> sendMsg destAddr
             | SendSince {Src = src; Counter = c} ->
                 Store {
-                    Events = Seq.skip (Checked.int c) appendLog  |> Seq.toArray;
-                    Until = appendLog.Count |> intToCounter;
+                    Events = Seq.skip (Checked.int c) log  |> Seq.toArray;
+                    Until = log.Count |> intToCounter;
                     Src = addr
                 }
                 |> sendMsg src            

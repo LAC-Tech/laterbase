@@ -134,8 +134,8 @@ test
         r2.Recv(StoreNew events2)
 
         // Bi-directional sync
-        r1.Sync r2.Addr
-        r2.Sync r1.Addr
+        r1.Recv (ReplicateFrom r2.Addr)
+        r2.Recv (ReplicateFrom r1.Addr)
 
         replicasConverged SameNetwork r1 r2        
     )
@@ -169,8 +169,8 @@ test
         rB2.Recv(StoreNew eventsB)
 
         // Sync 1 & 2 in different order; a . b = b . a
-        rA1.Sync rB1.Addr
-        rB2.Sync rA2.Addr
+        rA1.Recv (ReplicateFrom rB1.Addr)
+        rB2.Recv (ReplicateFrom rA2.Addr)
 
         replicasConverged DifferentNetworks rA1 rB2
     )
@@ -187,7 +187,7 @@ test
         replica.Recv (StoreNew events)
         controlReplica.Recv (StoreNew events)
 
-        replica.Sync replica.Addr
+        replica.Recv (ReplicateFrom replica.Addr)
 
         replicasConverged DifferentNetworks replica controlReplica
     )
@@ -217,12 +217,12 @@ test
         rC2.Recv (StoreNew eventsC)
 
         // (a . b) . c
-        rA1.Sync rB1.Addr
-        rC1.Sync rA1.Addr
+        rA1.Recv (ReplicateFrom rB1.Addr)
+        rC1.Recv (ReplicateFrom rA1.Addr)
 
         // a . (b . c)
-        rB2.Sync rC2.Addr
-        rA2.Sync rB2.Addr
+        rB2.Recv (ReplicateFrom rC2.Addr)
+        rA2.Recv (ReplicateFrom rB2.Addr)
 
         replicasConverged DifferentNetworks rC1 rA2
     )
