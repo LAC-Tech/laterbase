@@ -116,7 +116,7 @@ let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
     )
     |> (fun (Immediate x) -> x)
 
-(*
+
 test 
     "two databases will have the same events if they sync with each other"
     (fun
@@ -145,7 +145,7 @@ test
 
     (Definition 2.3, Marc Shapiro, Nuno Preguiça, Carlos Baquero, and Marek Zawirski. Conflict-free replicated data types)
 *)
-
+(*
 test
     "syncing is commutative"
     (fun

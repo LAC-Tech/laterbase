@@ -236,8 +236,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
         *)
 
         member self.Sync (destAddr: Address) =
-            SendSince(addr, appendLog.Count |> intToCounter)
-            |> sendMsg destAddr
+            SendSince(addr, logicalClock.Get(destAddr)) |> sendMsg destAddr
 
         member self.Recv (msg: Message<'payload>) =
             match msg with
