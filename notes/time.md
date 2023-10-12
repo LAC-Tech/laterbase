@@ -29,11 +29,11 @@ This theoretically exists but is not recorded - I'm yet to find a use for it.
 
 ## Hybrid Logical Clocks
 
-HLCs allow us to pack both physical and logical time to a single value.
+HLCs[^2] allow us to pack both physical and logical time to a single value.
 
 This would be useful for transaction time, as then the same table could be used for transaction time range queries, and replication.
 
 ## References
 
 [^1]: [Snodgrass, Richard. "The Temporal Query Language TQuel."](https://www2.cs.arizona.edu/~rts/pubs/TODS87.pdf)
- 
+[^2]: [Kulkarni, Sandeep, Demirbas, Madeppa, Avva, and Leone. 2014. "Logical Physical Clocks and Consistent Snapshots in Globally Distributed Databases."](https://cse.buffalo.edu/tech-reports/2014-04.pdf)
