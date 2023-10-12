@@ -192,7 +192,6 @@ test
         replicasConverged DifferentNetworks replica controlReplica
     )
 
-(*
 test
     "syncing is associative"
     (fun
@@ -218,13 +217,12 @@ test
         rC2.Recv (StoreNew eventsC)
 
         // (a . b) . c
-        rB1.Sync rA1.Addr
-        rA1.Sync rC1.Addr
+        rA1.Sync rB1.Addr
+        rC1.Sync rA1.Addr
 
         // a . (b . c)
-        rC2.Sync rB2.Addr
-        rB2.Sync rA2.Addr
+        rB2.Sync rC2.Addr
+        rA2.Sync rB2.Addr
 
         replicasConverged DifferentNetworks rC1 rA2
     )
-*)
