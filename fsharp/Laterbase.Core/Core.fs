@@ -117,13 +117,18 @@ module Events =
         let toEvents (id, payload) = (id, {Origin = addr; Payload = payload})
         Array.map toEvents
 
+module Message =
+    type SendSince = {Counter: uint64<counter>; Src: Address}
+    type Store<'payload> = {
+        Until: uint64<counter>;
+        Src: Address;
+        Events: Events<'payload>
+    }
+
 // All of the messages must be idempotent
 type Message<'payload> =
-    | SendSince of srcAddr: Address * lastCounter: uint64<counter>
-    | Store of
-        events: Events<'payload> *
-        srcAddr: Address * 
-        newCounter: uint64<counter>
+    | SendSince of Message.SendSince
+    | Store of Message.Store<'payload>
     | StoreNew of (EventID * 'payload) array
 
 (**
@@ -196,19 +201,16 @@ type private LocalReplica<'payload> (addr, sendMsg) =
     let appendLog = ResizeArray<EventID * EventVal<'payload>>()
     let logicalClock = LogicalClock()
 
-    // TODO: count
-    let txnOrder count = Seq.skip (Checked.int count) appendLog
-
     let addEvent (k, v) = appendLog.Add(k, v)
 
     let intToCounter = Checked.uint64 >> ( * ) 1UL<counter>
     
     interface IReplica<'payload> with
         member val Addr = addr
-        member self.Read(query) = 
+        member _.Read(query) = 
             let seq = 
                 match query.ByTime with
-                | LogicalTxn -> txnOrder (query.Limit |> intToCounter)
+                | LogicalTxn -> appendLog |> Seq.skip query.Limit
                 // Very naive but only used in inspector
                 | PhysicalValid -> 
                     let idSorted = OrderedDict()
@@ -236,19 +238,27 @@ type private LocalReplica<'payload> (addr, sendMsg) =
         *)
 
         member self.Sync (destAddr: Address) =
-            SendSince(addr, logicalClock.Get(destAddr)) |> sendMsg destAddr
+            let msg = SendSince {
+                Src = addr;
+                Counter = logicalClock.Get(destAddr)
+             } in
+             
+             msg |> sendMsg destAddr
 
         member self.Recv (msg: Message<'payload>) =
             match msg with
-            | SendSince (destAddr, lastCounter) ->
-                let events = txnOrder lastCounter |> Seq.toArray
-                let newCounter = appendLog.Count |> intToCounter
-                Store(events, addr, newCounter) |> sendMsg destAddr            
-            | Store (events, fromAddr, newCounter) ->
+            | SendSince {Src = src; Counter = c} ->
+                Store {
+                    Events = Seq.skip (Checked.int c) appendLog  |> Seq.toArray;
+                    Until = appendLog.Count |> intToCounter;
+                    Src = addr
+                }
+                |> sendMsg src            
+            | Store {Events = events; Until = until; Src = src} ->
                 events 
                 |> Seq.filter (fun (_, v) -> v.Origin <> addr)
                 |> Seq.iter addEvent
-                logicalClock.Update(fromAddr, newCounter)
+                logicalClock.Update(src, until)
 
             | StoreNew idPayloadPairs ->
                 let events = Events.create addr idPayloadPairs

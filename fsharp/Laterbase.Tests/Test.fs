@@ -107,10 +107,10 @@ let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
                 Seq.equal es1 es2
         
         if not converged then
-            eprintfn "Replicas did not converge"
+            eprintfn $"Replicas did not converge:"
 
-            eprintfn $"r1 = {r1.Read {ByTime = LogicalTxn; Limit = 0}}"
-            eprintfn $"r2 = {r2.Read {ByTime = LogicalTxn; Limit = 0}}"
+            eprintfn $"{r1.Addr} = {r1.Read {ByTime = LogicalTxn; Limit = 0}}"
+            eprintfn $"{r2.Addr} = {r2.Read {ByTime = LogicalTxn; Limit = 0}}"
             //openInspector [|r1; r2|]
             false
         else
@@ -169,13 +169,12 @@ test
         rB2.Recv(StoreNew eventsB)
 
         // Sync 1 & 2 in different order; a . b = b . a
-        rB1.Sync rA1.Addr
-        rA2.Sync rB2.Addr
+        rA1.Sync rB1.Addr
+        rB2.Sync rA2.Addr
 
         replicasConverged DifferentNetworks rA1 rB2
     )
 
-(*
 test
     "syncing is idempotent"
     (fun
@@ -193,6 +192,7 @@ test
         replicasConverged DifferentNetworks replica controlReplica
     )
 
+(*
 test
     "syncing is associative"
     (fun
