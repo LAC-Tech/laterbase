@@ -119,10 +119,10 @@ module Events =
 
 // All of the messages must be idempotent
 type Message<'payload> =
-    | Sync of destAddr: Address * lastCounter: uint64<counter>
+    | SendSince of srcAddr: Address * lastCounter: uint64<counter>
     | Store of
         events: Events<'payload> *
-        fromAddr: Address * 
+        srcAddr: Address * 
         newCounter: uint64<counter>
     | StoreNew of (EventID * 'payload) array
 
@@ -154,8 +154,8 @@ type IReplica<'payload> =
     abstract member Addr: Address
     abstract member Read: query: Query -> Future<Events<'payload>>
     (* abstract member View: unit -> Future<View<'payload>> *)
+    abstract member Sync: dest: Address -> unit
     abstract member Recv: Message<'payload> -> unit
-    abstract member Count: uint64<counter>
 
 /// These are for errors I consider to be un-recoverable.
 /// So, why not use an assertion?
@@ -196,25 +196,27 @@ type private LocalReplica<'payload> (addr, sendMsg) =
     let appendLog = ResizeArray<EventID * EventVal<'payload>>()
     let logicalClock = LogicalClock()
 
-    let txnOrder since = Seq.skip since appendLog
+    // TODO: count
+    let txnOrder count = Seq.skip (Checked.int count) appendLog
 
     let addEvent (k, v) = appendLog.Add(k, v)
+
+    let intToCounter = Checked.uint64 >> ( * ) 1UL<counter>
     
     interface IReplica<'payload> with
         member val Addr = addr
-        member _.Count with get() = 
-            appendLog.Count |> Checked.uint64 |> ( * ) 1UL<counter>
         member self.Read(query) = 
-            let seq = match query.ByTime with
-            | LogicalTxn -> txnOrder (query.Limit - 1)
-            // Very naive but only used in inspector
-            | PhysicalValid -> 
-                let idSorted = OrderedDict()
-                for (k, v) in appendLog do
-                    if not (idSorted.TryAdd(k, v)) then
-                        failwith "duplicate events in log"
+            let seq = 
+                match query.ByTime with
+                | LogicalTxn -> txnOrder (query.Limit |> intToCounter)
+                // Very naive but only used in inspector
+                | PhysicalValid -> 
+                    let idSorted = OrderedDict()
+                    for (k, v) in appendLog do
+                        if not (idSorted.TryAdd(k, v)) then
+                            failwith "duplicate events in log"
 
-                idSorted |> Seq.skip query.Limit
+                    idSorted |> Seq.skip query.Limit
 
             seq |> Seq.toArray |> Immediate
         (*
@@ -233,22 +235,22 @@ type private LocalReplica<'payload> (addr, sendMsg) =
             })
         *)
 
+        member self.Sync (destAddr: Address) =
+            SendSince(addr, appendLog.Count |> intToCounter)
+            |> sendMsg destAddr
+
         member self.Recv (msg: Message<'payload>) =
             match msg with
-            | Sync (destAddr, lastCounter) ->
-                let since = logicalClock.Get(destAddr) |> Checked.int
-                let events = txnOrder since |> Seq.toArray
-
-                let newCounter = Checked.uint64 appendLog.Count * 1UL<counter>
-                    
-                Store(events, addr, newCounter) |> sendMsg destAddr
-            
+            | SendSince (destAddr, lastCounter) ->
+                let events = txnOrder lastCounter |> Seq.toArray
+                let newCounter = appendLog.Count |> intToCounter
+                Store(events, addr, newCounter) |> sendMsg destAddr            
             | Store (events, fromAddr, newCounter) ->
-                logicalClock.Update(fromAddr, newCounter)
                 events 
                 |> Seq.filter (fun (_, v) -> v.Origin <> addr)
                 |> Seq.iter addEvent
-            
+                logicalClock.Update(fromAddr, newCounter)
+
             | StoreNew idPayloadPairs ->
                 let events = Events.create addr idPayloadPairs
                 Array.iter addEvent events

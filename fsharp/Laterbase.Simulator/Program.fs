@@ -123,7 +123,8 @@ let main args =
         for replica in replicas do
             if Rand.bool rng Probability.sync then
                 let destReplica = replicaExcept replica
-                sendMsg replica.Addr (Sync destReplica.Addr)
+                Sync (destReplica.Addr, destReplica.Count)
+                |> sendMsg replica.Addr
 
             if Rand.bool rng Probability.recvEvents then
                 let numEvents = Rand.int rng Range.eventsPerTick
@@ -155,9 +156,12 @@ let main args =
     printfn $"- Events generated = {stats.NewEvents:n0}"
     printfn $"- Events sent = {stats.EventsSent |> Seq.sum:n0}\t" 
     printfn $"- Avg events per msg = {stats.EventsSent |> Seq.averageBy float:n0}"
+    
+    (*
     printfn "View Replication Inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas replicas
+    *)
 
     0
 
