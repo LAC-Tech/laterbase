@@ -30,10 +30,12 @@ type MyGenerators =
 
 let config = Config.Quick.WithArbitrary([ typeof<MyGenerators> ])
 
+(*
 let openInspector rs =
     printfn "error - open inspector? (y/n)"
     let k = Console.ReadKey(true)
     if k.KeyChar = 'y' then Inspect.replicas rs
+*)
 
 let test descr testFn =
     printfn "# %A" descr
@@ -106,7 +108,7 @@ let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
         
         if not converged then
             eprintfn "Replicas did not converge"
-            openInspector [|r1; r2|]
+            //openInspector [|r1; r2|]
 
         converged
     )
@@ -126,8 +128,8 @@ test
         r2.Recv(StoreNew events2)
 
         // Bi-directional sync
-        r1.Recv(Sync r2.Addr)
-        r2.Recv(Sync r1.Addr)
+        r1.Recv(Sync (r2.Addr, r2.Count))
+        r2.Recv(Sync (r1.Addr, r2.Count))
 
         replicasConverged SameNetwork r1 r2        
     )
@@ -161,8 +163,8 @@ test
         rB2.Recv(StoreNew eventsB)
 
         // Sync 1 & 2 in different order; a . b = b . a
-        rB1.Recv(Sync rA1.Addr)
-        rA2.Recv(Sync rB2.Addr)
+        rB1.Recv(Sync (rA1.Addr, rA1.Count))
+        rA2.Recv(Sync (rB2.Addr, rB2.Count))
 
         replicasConverged DifferentNetworks rA1 rB2
     )
@@ -179,7 +181,7 @@ test
         replica.Recv (StoreNew events)
         controlReplica.Recv (StoreNew events)
 
-        replica.Recv (Sync replica.Addr)
+        replica.Recv (Sync (replica.Addr, replica.Count))
 
         replicasConverged DifferentNetworks replica controlReplica
     )
@@ -209,12 +211,12 @@ test
         rC2.Recv (StoreNew eventsC)
 
         // (a . b) . c
-        rB1.Recv (Sync rA1.Addr)
-        rA1.Recv (Sync rC1.Addr)
+        rB1.Recv (Sync (rA1.Addr, rA1.Count))
+        rA1.Recv (Sync (rC1.Addr, rC1.Count))
 
         // a . (b . c)
-        rC2.Recv (Sync rB2.Addr)
-        rB2.Recv (Sync rA2.Addr)
+        rC2.Recv (Sync (rB2.Addr, rB2.Count))
+        rB2.Recv (Sync (rA2.Addr, rA2.Count))
 
         replicasConverged DifferentNetworks rC1 rA2
     )

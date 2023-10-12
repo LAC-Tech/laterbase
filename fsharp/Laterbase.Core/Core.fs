@@ -81,8 +81,7 @@ let msPerS: int64<ms/s> = 1000L<ms/s>
 let sPerM: int64<s/m> = 60L<s/m>
 let mPerH: int64<m/h> = 60L<m/h>
 
-[<Measure>] type received
-[<Measure>] type sent
+[<Measure>] type counter // txn logical time
 
 /// Address in an actor sense. Used for locating Replicas
 /// Keeping it as a dumb data type so it's easy to send across a network
@@ -120,13 +119,11 @@ module Events =
 
 // All of the messages must be idempotent
 type Message<'payload> =
-    | Sync of destAddr: Address
+    | Sync of destAddr: Address * lastCounter: uint64<counter>
     | Store of
         events: Events<'payload> *
         fromAddr: Address * 
-        numEventsReceived: uint64<received>
-    /// This halves the number of events sent across network in simulator
-    | StoreAck of fromAddr: Address * numEventsSent: uint64<sent>
+        newCounter: uint64<counter>
     | StoreNew of (EventID * 'payload) array
 
 (**
@@ -142,23 +139,10 @@ type Query = {
     Limit: int // maximum number of events to return
 }
 
-module Query =
-    let inTxnOrder<'k, 'v> (eventTable: OrderedDict<'k, 'v>) appendLog since =
-        appendLog
-        |> Seq.skip (Checked.int since - 1)
-        |> Seq.choose eventTable.GetKeyValue
-
-    let execute (eventTable: OrderedDict<'k, 'v>) appendLog query =
-        match query.ByTime with
-        | PhysicalValid -> eventTable |> Seq.skip (int query.Limit) 
-        | LogicalTxn ->
-            let since = (uint64 query.Limit) * 1UL<sent>
-            inTxnOrder eventTable appendLog since
-
 /// For local databases - can see implementation details
 type DebugView = {
     AppendLog: EventID seq
-    LogicalClock: (Address * uint64<sent> * uint64<received>) seq
+    LogicalClock: (Address * uint64<counter>) seq
 }
 
 type View<'payload> = {
@@ -169,8 +153,9 @@ type View<'payload> = {
 type IReplica<'payload> =
     abstract member Addr: Address
     abstract member Read: query: Query -> Future<Events<'payload>>
-    abstract member View: unit -> Future<View<'payload>>
+    (* abstract member View: unit -> Future<View<'payload>> *)
     abstract member Recv: Message<'payload> -> unit
+    abstract member Count: uint64<counter>
 
 /// These are for errors I consider to be un-recoverable.
 /// So, why not use an assertion?
@@ -180,73 +165,59 @@ type ReplicaConstraintViolation<'e> (reason: string, replica: IReplica<'e>) =
     inherit Exception (reason)
     member val Replica = replica
 
-/// Double sided counter so we can just send single int across the network
-/// TODO save some space and just store the difference?
-type Counter = { Sent: uint64<sent>; Received: uint64<received> }
-
 /// Idea behind this is I don't have to send a logical clock across network
 /// If I store sent and received counts separately, replicas can remember.
 /// It made more sense when i thought of it... 
-type LogicalClock private (dict:OrderedDict<Address, Counter>) =
-    let seq() = Seq.map (fun (k, v) -> (k, v.Sent, v.Received)) dict
+type LogicalClock private (dict:OrderedDict<Address, uint64<counter>>) =
+    let seq() = Seq.map (fun (k, v) -> (k, v)) dict
 
-    static member Zero = { Sent = 0UL<sent>; Received = 0UL<received> }
     new() = LogicalClock(OrderedDict())
 
-    member _.UpdateSent(fromAddr, numEventsSent) = 
+    member _.Update(fromAddr, newCounter) = 
         let newCounter = 
             match dict.Get(fromAddr) with
-            | Some counter -> 
-                {counter with Sent = max counter.Sent numEventsSent}
-            | None -> {Sent = numEventsSent; Received = 0UL<received>}
+            | Some counter -> max counter newCounter
+            | None -> 0UL<counter>
 
         dict.OverWrite(fromAddr, newCounter)
 
-    member _.UpdateReceived(fromAddr, numEventsReceived) = 
-        let newCounter =
-            match dict.Get(fromAddr) with
-            | Some counter -> 
-                {counter with Received = max counter.Received numEventsReceived}
-            | None -> {Sent = 0UL<sent>; Received = numEventsReceived}
-
-        dict.OverWrite(fromAddr, newCounter)
-
-    member _.GetSent(addr) = dict.GetOrDefault(addr, LogicalClock.Zero).Sent
-    member _.GetReceived(addr) =
-        dict.GetOrDefault(addr, LogicalClock.Zero).Received
+    member _.Get(addr) = dict.GetOrDefault(addr, 0UL<counter>)
     
-    interface IEnumerable<Address * uint64<sent> * uint64<received>> with
+    interface IEnumerable<Address * uint64<counter>> with
         member _.GetEnumerator(): IEnumerator<_> = seq().GetEnumerator()
         member _.GetEnumerator(): Collections.IEnumerator = 
             seq().GetEnumerator()
 
 type private LocalReplica<'payload> (addr, sendMsg) =
-    let eventTable = OrderedDict<EventID, EventVal<'payload>>()
     (**
         This is linear, and so imposes a total order on a partial order.
         TODO: added another array that keeps track of which were concurrent?
     *)
-    let appendLog = ResizeArray<EventID>()
+    let appendLog = ResizeArray<EventID * EventVal<'payload>>()
     let logicalClock = LogicalClock()
 
-    // Only add to the append log if the event does not already exist
-    let addEvent (k, v: EventVal<'payload>) = 
-        if eventTable.TryAdd(k, v) then appendLog.Add k
+    let txnOrder since = Seq.skip since appendLog
 
-    member private self.CrashIf(condition, msg) =
-        if condition then raise (ReplicaConstraintViolation(msg, self))
-
-    member private self.CheckAppendLog() =
-        self.CrashIf(eventTable.Count > appendLog.Count, "Append log is too short")
-        self.CrashIf(eventTable.Count < appendLog.Count, "Append log is too long")
+    let addEvent (k, v) = appendLog.Add(k, v)
     
     interface IReplica<'payload> with
         member val Addr = addr
+        member _.Count with get() = 
+            appendLog.Count |> Checked.uint64 |> ( * ) 1UL<counter>
         member self.Read(query) = 
-            self.CheckAppendLog()
-            Array.ofSeq (Query.execute eventTable appendLog query)
-            |> Immediate
+            let seq = match query.ByTime with
+            | LogicalTxn -> txnOrder (query.Limit - 1)
+            // Very naive but only used in inspector
+            | PhysicalValid -> 
+                let idSorted = OrderedDict()
+                for (k, v) in appendLog do
+                    if not (idSorted.TryAdd(k, v)) then
+                        failwith "duplicate events in log"
 
+                idSorted |> Seq.skip query.Limit
+
+            seq |> Seq.toArray |> Immediate
+        (*
         member self.View() =
             let self = self :> IReplica<'payload> 
 
@@ -260,35 +231,27 @@ type private LocalReplica<'payload> (addr, sendMsg) =
                 Events = Events.view es;
                 Debug = Some debug
             })
+        *)
 
         member self.Recv (msg: Message<'payload>) =
             match msg with
-            | Sync destAddr ->
-                let events =
-                    logicalClock.GetSent(destAddr)
-                    |> Query.inTxnOrder eventTable appendLog
-                    |> Seq.toArray
+            | Sync (destAddr, lastCounter) ->
+                let since = logicalClock.Get(destAddr) |> Checked.int
+                let events = txnOrder since |> Seq.toArray
 
-                let numEventsReceived =
-                    Checked.uint64 appendLog.Count * 1UL<received>
+                let newCounter = Checked.uint64 appendLog.Count * 1UL<counter>
                     
-                Store(events, addr, numEventsReceived) |> sendMsg destAddr
+                Store(events, addr, newCounter) |> sendMsg destAddr
             
-            | Store (events, fromAddr, numEventsReceived) ->
-                logicalClock.UpdateReceived(fromAddr, numEventsReceived)
-                Array.iter addEvent events
-                self.CheckAppendLog()
-
-                let numEventsSent = Array.uLength events * 1UL<sent>
-                StoreAck(addr, numEventsSent) |> sendMsg fromAddr
-
-            | StoreAck (fromAddr, numEventsSent) ->
-                logicalClock.UpdateSent(fromAddr, numEventsSent)
+            | Store (events, fromAddr, newCounter) ->
+                logicalClock.Update(fromAddr, newCounter)
+                events 
+                |> Seq.filter (fun (_, v) -> v.Origin <> addr)
+                |> Seq.iter addEvent
             
             | StoreNew idPayloadPairs ->
-                let events = Events.create addr idPayloadPairs 
+                let events = Events.create addr idPayloadPairs
                 Array.iter addEvent events
-                self.CheckAppendLog()
 
 let localReplica<'payload> (addr, sendMsg) = 
     LocalReplica(addr, sendMsg) :> IReplica<'payload>
