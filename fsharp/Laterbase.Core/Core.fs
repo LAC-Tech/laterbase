@@ -217,13 +217,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
                 match query.ByTime with
                 | LogicalTxn -> log |> Seq.skip query.Limit
                 // Very naive but only used in inspector
-                | PhysicalValid -> 
-                    let idSorted = OrderedDict()
-                    for (k, v) in log do
-                        if not (idSorted.TryAdd(k, v)) then
-                            failwith "duplicate events in log"
-
-                    idSorted |> Seq.skip query.Limit
+                | PhysicalValid -> eventIdIndex |> Seq.skip query.Limit
 
             seq |> Seq.toArray |> Immediate
         (*
