@@ -130,8 +130,8 @@ test
         let (r1, r2) = twoTestReplicas(addr1, addr2)
 
         // Populate the two databases with separate events
-        r1.Recv(StoreNew events1)
-        r2.Recv(StoreNew events2)
+        r1.Recv (StoreNew events1)
+        r2.Recv (StoreNew events2)
 
         // Bi-directional sync
         r1.Recv (ReplicateFrom r2.Addr)

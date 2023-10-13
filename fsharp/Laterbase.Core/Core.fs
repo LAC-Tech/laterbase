@@ -203,10 +203,10 @@ type private LocalReplica<'payload> (addr, sendMsg) =
     // The following two data structures are 'operational indexes'.
     // They are not a source of truth, and can be built by the log.
     let logicalClock = LogicalClock()
-    let eventIdIndex: OrderedDict<EventID, EventVal<'payload>> = OrderedDict()
+    let eventIdIndex: OrderedDict<EventID, int> = OrderedDict()
 
-    let addEvent (k, v) = 
-        if eventIdIndex.TryAdd (k, v) then log.Add(k, v)
+    let addEvent (k, v) =
+        if eventIdIndex.TryAdd (k, log.Count) then log.Add(k, v)
 
     let intToCounter = Checked.uint64 >> ( * ) 1UL<counter>
     
@@ -217,7 +217,10 @@ type private LocalReplica<'payload> (addr, sendMsg) =
                 match query.ByTime with
                 | LogicalTxn -> log |> Seq.skip query.Limit
                 // Very naive but only used in inspector
-                | PhysicalValid -> eventIdIndex |> Seq.skip query.Limit
+                | PhysicalValid ->
+                    eventIdIndex 
+                    |> Seq.skip query.Limit
+                    |> Seq.map (fun (k, i) -> (k, snd log[i]))
 
             seq |> Seq.toArray |> Immediate
         (*
