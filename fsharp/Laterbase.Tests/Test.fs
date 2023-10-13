@@ -108,6 +108,9 @@ let replicasConverged connection (r1: IReplica<'e>) (r2: IReplica<'e>) =
         
         if not converged then
             eprintfn "Replicas did not converge"
+
+            eprintfn $"r1 = {r1.Read {ByTime = LogicalTxn; Limit = 0}}"
+            eprintfn $"r2 = {r2.Read {ByTime = LogicalTxn; Limit = 0}}"
             //openInspector [|r1; r2|]
             false
         else
@@ -145,7 +148,7 @@ test
 
     (Definition 2.3, Marc Shapiro, Nuno Preguiça, Carlos Baquero, and Marek Zawirski. Conflict-free replicated data types)
 *)
-(*
+
 test
     "syncing is commutative"
     (fun
@@ -172,6 +175,7 @@ test
         replicasConverged DifferentNetworks rA1 rB2
     )
 
+(*
 test
     "syncing is idempotent"
     (fun
