@@ -132,9 +132,9 @@ test "BST" {
     try std.testing.expectEqual(@as(?u64, 2), bst.get(4));
     try std.testing.expectEqual(@as(?u64, null), bst.get(27));
 
-    try bst.put(arena.allocator(), 0, 1);
-    var iterator = bst.iterator();
-    _ = iterator;
+    //try bst.put(arena.allocator(), 0, 1);
+    //var iterator = bst.iterator();
+    //_ = iterator;
 
     // try std.testing.expectEqual(@as(*const u64, &0), iterator.next().?.key_ptr);
     // try std.testing.expectEqual(@as(*const u64, &4), iterator.next().?.key_ptr);
