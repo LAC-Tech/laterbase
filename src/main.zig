@@ -12,19 +12,99 @@ fn BST(comptime K: type, comptime V: type) type {
     const Node = struct {
         key: K,
         val: V,
-        left: *?@This(),
-        right: *?@This(),
+        left: ?*@This(),
+        right: ?*@This(),
+
+        fn init(allocator: std.mem.Allocator, k: K, v: V) !*@This() {
+            var result = try allocator.create(@This());
+            result.* = .{ .key = k, .val = v, .left = null, .right = null };
+            return result;
+        }
     };
 
     return struct {
         root: ?*Node,
+        len: usize,
 
         fn init() @This() {
-            return .{ .root = null };
+            return .{ .root = null, .len = 0 };
+        }
+
+        fn put(
+            self: *@This(),
+            allocator: std.mem.Allocator,
+            k: K,
+            v: V,
+        ) !void {
+            var new_node = try Node.init(allocator, k, v);
+
+            if (self.root) |root| {
+                var current: *Node = root;
+
+                for (0..self.len) |_| {
+                    if (k < current.*.key) {
+                        if (current.*.left) |left_node| {
+                            current = left_node;
+                        } else {
+                            current.*.left = new_node;
+                            break;
+                        }
+                    } else if (k > current.*.key) {
+                        if (current.*.right) |right_node| {
+                            current = right_node;
+                        } else {
+                            current.*.right = new_node;
+                            break;
+                        }
+                    } else {
+                        std.debug.panic("Attempted to add duplicate key {}", .{k});
+                    }
+                }
+            } else {
+                // Tree is empty!
+                self.root = new_node;
+            }
+
+            self.len += 1;
+        }
+
+        fn get(self: @This(), k: K) ?V {
+            if (self.root) |root| {
+                var current: *Node = root;
+
+                for (0..self.len) |_| {
+                    if (k < current.*.key) {
+                        if (current.*.left) |left_node| {
+                            current = left_node;
+                        } else {
+                            return null;
+                        }
+                    } else if (k > current.*.key) {
+                        if (current.*.right) |right_node| {
+                            current = right_node;
+                        } else {
+                            return null;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
+                return current.val;
+            } else {
+                // Tree is empty!
+                return null;
+            }
         }
     };
 }
 
 test "BST" {
-    _ = BST(u64, u64).init();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var bst = BST(u64, u64).init();
+    try bst.put(arena.allocator(), 4, 2);
+    try std.testing.expectEqual(@as(usize, 1), bst.len);
+    try std.testing.expectEqual(@as(?u64, 2), bst.get(4));
+    try std.testing.expectEqual(@as(?u64, null), bst.get(27));
 }
