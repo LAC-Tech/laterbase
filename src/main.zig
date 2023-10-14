@@ -8,6 +8,7 @@ pub fn main() void {
 // Implementing this because Zig doesn't have kind of sorted map
 // Also, this is the simplest one I could think of
 // Plan to use this for indices
+
 fn BST(comptime K: type, comptime V: type) type {
     const Node = struct {
         key: K,
@@ -25,6 +26,26 @@ fn BST(comptime K: type, comptime V: type) type {
     return struct {
         root: ?*Node,
         len: usize,
+
+        const Self = @This();
+
+        // const Entry = struct { key_ptr: *K, value_ptr: *V };
+        // _ = Entry;
+
+        const Iterator = struct {
+            node: ?*Node,
+
+            pub fn init(bst: Self) @This() {
+                var node: ?*Node = null;
+                node = bst.root;
+                if (node) |n| {
+                    while (n.*.left) |left| {
+                        node = left;
+                    }
+                }
+                return .{ .node = node };
+            }
+        };
 
         fn init() @This() {
             return .{ .root = null, .len = 0 };
@@ -91,10 +112,13 @@ fn BST(comptime K: type, comptime V: type) type {
                 }
 
                 return current.val;
-            } else {
-                // Tree is empty!
-                return null;
             }
+
+            return null;
+        }
+
+        fn iterator(self: @This()) Iterator {
+            return Iterator.init(self);
         }
     };
 }
@@ -107,4 +131,11 @@ test "BST" {
     try std.testing.expectEqual(@as(usize, 1), bst.len);
     try std.testing.expectEqual(@as(?u64, 2), bst.get(4));
     try std.testing.expectEqual(@as(?u64, null), bst.get(27));
+
+    try bst.put(arena.allocator(), 0, 1);
+    var iterator = bst.iterator();
+    _ = iterator;
+
+    // try std.testing.expectEqual(@as(*const u64, &0), iterator.next().?.key_ptr);
+    // try std.testing.expectEqual(@as(*const u64, &4), iterator.next().?.key_ptr);
 }
