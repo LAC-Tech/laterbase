@@ -80,12 +80,19 @@ fn BST(comptime K: type, comptime V: type) type {
             }
 
             pub fn next(self: *@This()) ?Entry {
+                var result: ?Entry = null;
+                if (self.current) |current| {
+                    result = .{
+                        .key_ptr = &current.key,
+                        .value_ptr = &current.val,
+                    };
+                }
+
                 if (self.next_node()) |n| {
                     self.current = n;
-                    return .{ .key_ptr = &n.key, .value_ptr = &n.val };
-                } else {
-                    return null;
                 }
+
+                return result;
             }
         };
 
@@ -169,15 +176,28 @@ test "BST" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var bst = BST(u64, u64).init();
+
+    try std.testing.expectEqual(@as(usize, 0), bst.len);
+
     try bst.put(arena.allocator(), 4, 2);
-    try std.testing.expectEqual(@as(usize, 1), bst.len);
-    try std.testing.expectEqual(@as(?u64, 2), bst.get(4));
-    try std.testing.expectEqual(@as(?u64, null), bst.get(27));
     try bst.put(arena.allocator(), 0, 1);
     try bst.put(arena.allocator(), 10, 0);
+    try bst.put(arena.allocator(), 2, 20);
+
+    try std.testing.expectEqual(@as(usize, 4), bst.len);
+    try std.testing.expectEqual(@as(?u64, 2), bst.get(4));
+    try std.testing.expectEqual(@as(?u64, null), bst.get(27));
+
+    // Try and see what the shape of the tree is
+    try std.testing.expectEqual(@as(u64, 2), bst.root.?.val);
+    try std.testing.expectEqual(@as(u64, 1), bst.root.?.left.?.val);
+    try std.testing.expectEqual(@as(u64, 0), bst.root.?.right.?.val);
 
     var iter = try bst.iterator(arena.allocator());
     defer iter.deinit(arena.allocator());
 
     try std.testing.expectEqual(@as(u64, 0), iter.next().?.key_ptr.*);
+    try std.testing.expectEqual(@as(u64, 2), iter.next().?.key_ptr.*);
+    try std.testing.expectEqual(@as(u64, 4), iter.next().?.key_ptr.*);
+    try std.testing.expectEqual(@as(u64, 10), iter.next().?.key_ptr.*);
 }
