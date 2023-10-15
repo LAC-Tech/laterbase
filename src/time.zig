@@ -33,12 +33,16 @@ const Counter = packed struct {
 
 // Essentially a version vector
 pub const LogicalClock = struct {
-    const Counters = std.AutoHashMapUnmanaged([]const u8, Counter);
+    const CounterSize = 16;
+
+    const Counters = std.StringHashMapUnmanaged(Counter);
 
     counters: Counters,
 
-    pub fn init(allocator: std.mem.Allocator) @This() {
-        return .{ .counters = Counters.init(allocator) };
+    pub fn init(allocator: std.mem.Allocator) !@This() {
+        var counters: Counters = .{};
+        try counters.ensureTotalCapacity(allocator, CounterSize);
+        return .{ .counters = counters };
     }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {

@@ -1,13 +1,36 @@
 const std = @import("std");
-const ds = @import("./ds.zig");
+const ds = @import("ds.zig");
+const msg = @import("msg.zig");
+const time = @import("time.zig");
 
 pub fn main() void {
     std.debug.print("gettin ziggy wit it", .{});
 }
 
 fn LocalReplica(comptime Payload: type) type {
-    _ = Payload;
-    return struct {};
+    return struct {
+        const maxNumEvents = 10_000;
+
+        const Log = std.ArrayListUnmanaged(struct {
+            msg.Event.Id,
+            msg.Event.Val(Payload),
+        });
+
+        log: Log,
+        // Each replica should have its own storage
+        allocator: std.mem.Allocator,
+
+        fn init(allocator: std.mem.Allocator) !@This() {
+            return .{
+                .log = try Log.initCapacity(allocator, maxNumEvents),
+                .allocator = allocator,
+            };
+        }
+
+        fn deinit(self: *@This()) void {
+            self.log.deinit(self.allocator);
+        }
+    };
 }
 
 test "BST" {
@@ -38,4 +61,14 @@ test "BST" {
     try std.testing.expectEqual(@as(u64, 2), iter.next().?.key_ptr.*);
     try std.testing.expectEqual(@as(u64, 4), iter.next().?.key_ptr.*);
     try std.testing.expectEqual(@as(u64, 10), iter.next().?.key_ptr.*);
+}
+
+test "Logical Clock" {
+    var lc = try time.LogicalClock.init(std.testing.allocator);
+    defer lc.deinit(std.testing.allocator);
+}
+
+test "Local Replica" {
+    var r = try LocalReplica(u64).init(std.testing.allocator);
+    defer r.deinit();
 }
