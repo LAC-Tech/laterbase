@@ -45,6 +45,8 @@ fn BST(comptime K: type, comptime V: type) type {
                         if (c.left) |left| {
                             try parent_stack.append(allocator, current);
                             current = left;
+                        } else {
+                            break;
                         }
                     } else {
                         break;
@@ -79,6 +81,7 @@ fn BST(comptime K: type, comptime V: type) type {
 
             pub fn next(self: *@This()) ?Entry {
                 if (self.next_node()) |n| {
+                    self.current = n;
                     return .{ .key_ptr = &n.key, .value_ptr = &n.val };
                 } else {
                     return null;
@@ -176,7 +179,5 @@ test "BST" {
     var iter = try bst.iterator(arena.allocator());
     defer iter.deinit(arena.allocator());
 
-    while (iter.next()) |entry| {
-        std.debug.print("key = {}, val = {}", .{ entry.key_ptr.*, entry.value_ptr.* });
-    }
+    try std.testing.expectEqual(@as(u64, 0), iter.next().?.key_ptr.*);
 }
