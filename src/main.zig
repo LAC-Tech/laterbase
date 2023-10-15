@@ -16,19 +16,26 @@ fn LocalReplica(comptime Payload: type) type {
             msg.Event.Val(Payload),
         });
 
+        const IdIndex = std.AutoHashMapUnmanaged(msg.Event.Id, u64);
+
         log: Log,
+        id_index: IdIndex,
         // Each replica should have its own storage
         allocator: std.mem.Allocator,
 
         fn init(allocator: std.mem.Allocator) !@This() {
+            var id_index: IdIndex = .{};
+            try id_index.ensureTotalCapacity(allocator, maxNumEvents);
             return .{
                 .log = try Log.initCapacity(allocator, maxNumEvents),
+                .id_index = id_index,
                 .allocator = allocator,
             };
         }
 
         fn deinit(self: *@This()) void {
             self.log.deinit(self.allocator);
+            self.id_index.deinit(self.allocator);
         }
     };
 }
