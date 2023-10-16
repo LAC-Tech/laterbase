@@ -110,6 +110,32 @@ pub fn BST(comptime K: type, comptime V: type) type {
             self.allocator.deinit();
         }
 
+        const NextNode = union(enum) {
+            left: *Node,
+            right: *Node,
+            left_null: void,
+            right_null: void,
+            stop: void,
+        };
+
+        fn next_node(current: *Node, k: K) NextNode {
+            if (current.*.key > k) {
+                if (current.*.left) |left_node| {
+                    return .{ .left = left_node };
+                } else {
+                    return .{ .left_null = {} };
+                }
+            } else if (k > current.*.key) {
+                if (current.*.right) |right_node| {
+                    return .{ .right = right_node };
+                } else {
+                    return .{ .right_null = {} };
+                }
+            } else {
+                return .{ .stop = {} };
+            }
+        }
+
         pub fn put(
             self: *@This(),
             k: K,
@@ -120,24 +146,21 @@ pub fn BST(comptime K: type, comptime V: type) type {
 
             if (self.root) |root| {
                 var current: *Node = root;
-
                 for (0..self.len) |_| {
-                    if (k < current.*.key) {
-                        if (current.*.left) |left_node| {
-                            current = left_node;
-                        } else {
+                    switch (next_node(current, k)) {
+                        .left => |left_node| current = left_node,
+                        .right => |right_node| current = right_node,
+                        .left_null => {
                             current.*.left = new_node;
                             break;
-                        }
-                    } else if (k > current.*.key) {
-                        if (current.*.right) |right_node| {
-                            current = right_node;
-                        } else {
+                        },
+                        .right_null => {
                             current.*.right = new_node;
                             break;
-                        }
-                    } else {
-                        std.debug.panic("Attempted to add duplicate key {}", .{k});
+                        },
+                        .stop => {
+                            std.debug.panic("Attempted to add duplicate key {}", .{k});
+                        },
                     }
                 }
             } else {
@@ -156,25 +179,18 @@ pub fn BST(comptime K: type, comptime V: type) type {
                 var current: *Node = root;
 
                 for (0..self.len) |_| {
-                    if (current.*.key > k) {
-                        // Keep track of what the latest key that's bigger is
-                        result = .{ .first_gt = current };
-                        if (current.*.left) |left_node| {
+                    switch (next_node(current, k)) {
+                        .left => |left_node| {
+                            result = .{ .first_gt = current };
                             current = left_node;
-                        } else {
-                            // There's no smaller key
-                            break;
-                        }
-                    } else if (k > current.*.key) {
-                        if (current.*.right) |right_node| {
-                            current = right_node;
-                        } else {
-                            // there's no larger key;
-                            break;
-                        }
-                    } else {
-                        result = .{ .eq = current };
-                        break;
+                        },
+                        .left_null => {
+                            result = .{ .first_gt = current };
+                            break; // there's no smaller key
+                        },
+                        .right => |right_node| current = right_node,
+                        .right_null => break, // there's no larger key
+                        .stop => result = .{ .eq = current },
                     }
                 }
             }
@@ -207,7 +223,6 @@ pub fn BST(comptime K: type, comptime V: type) type {
                 .first_gt => |n| n,
             };
 
-            std.debug.print("{?}", .{node});
             // TODO: better 'length' heurestic than the number of nodes in tree
             // This will over allocate
             return try Iterator.init(allocator, node, self.len);
