@@ -202,6 +202,7 @@ type private LocalReplica<'payload> (addr, sendMsg) =
 
     // The following two data structures are 'operational indexes'.
     // They are not a source of truth, and can be built by the log.
+
     let logicalClock = LogicalClock()
     let eventIdIndex: OrderedDict<EventID, int> = OrderedDict()
 

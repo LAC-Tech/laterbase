@@ -1,24 +1,26 @@
 const std = @import("std");
 const ds = @import("ds.zig");
-const msg = @import("msg.zig");
+const inter = @import("inter.zig");
 const time = @import("time.zig");
 
 pub fn main() void {
     std.debug.print("gettin ziggy wit it", .{});
 }
 
+const Query = struct { time: time.Type, limit: u64 };
+
 fn LocalReplica(comptime Payload: type) type {
     return struct {
         const maxNumEvents = 10_000;
 
-        const Log = std.ArrayListUnmanaged(struct {
-            msg.Event.Id,
-            msg.Event.Val(Payload),
-        });
+        const Log = std.ArrayListUnmanaged(inter.Event(Payload));
 
-        const IdIndex = std.AutoHashMapUnmanaged(msg.Event.Id, u64);
+        const IdIndex = std.AutoHashMapUnmanaged(inter.EventId, u64);
 
+        // The log is the source of truth. Everything else is just a cache!
         log: Log,
+        // This is an "operational index" - needed for the replica to work, but
+        // not the source of truth
         id_index: IdIndex,
         // Each replica should have its own storage
         allocator: std.mem.Allocator,
@@ -37,6 +39,11 @@ fn LocalReplica(comptime Payload: type) type {
             self.log.deinit(self.allocator);
             self.id_index.deinit(self.allocator);
         }
+
+        fn read(self: @This(), query: Query) []const inter.Event(Payload) {
+            _ = query;
+            _ = self;
+        }
     };
 }
 
@@ -47,6 +54,7 @@ test "BST" {
 
     try std.testing.expectEqual(@as(usize, 0), bst.len);
 
+    // TODO: some kind of 'from iterator' ? how do std lib containers do it?
     try bst.put(arena.allocator(), 4, 2);
     try bst.put(arena.allocator(), 0, 1);
     try bst.put(arena.allocator(), 10, 0);

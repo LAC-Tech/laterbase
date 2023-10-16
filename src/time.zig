@@ -62,3 +62,6 @@ pub const LogicalClock = struct {
         }
     }
 };
+
+// Only used for queries right now,
+pub const Type = enum { logical_txn, physical_valid };
