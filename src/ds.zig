@@ -66,14 +66,15 @@ pub fn BST(comptime K: type, comptime V: type) type {
 
             pub fn init(
                 allocator: std.mem.Allocator,
-                node: ?*Node,
-                initial_size: usize,
+                bst: Self,
             ) !@This() {
-                var parent_stack =
-                    try ParentStack.initCapacity(allocator, initial_size);
-                var current = node;
+                var parent_stack = try ParentStack.initCapacity(
+                    allocator,
+                    bst.len,
+                );
+                var current = bst.root;
 
-                for (0..initial_size) |_| {
+                for (0..bst.len) |_| {
                     if (current) |c| {
                         if (c.left) |left| {
                             try parent_stack.append(allocator, current);
@@ -88,6 +89,54 @@ pub fn BST(comptime K: type, comptime V: type) type {
                     .parent_stack = parent_stack,
                     .current = current,
                 };
+            }
+
+            pub fn initFrom(
+                allocator: std.mem.Allocator,
+                bst: Self,
+                start_key: K,
+            ) !@This() {
+                var parent_stack = try ParentStack.initCapacity(
+                    allocator,
+                    bst.len,
+                );
+
+                if (bst.root) |initial| {
+                    var current = initial;
+
+                    for (0..bst.len) |_| {
+                        var next_result = current.next(start_key);
+
+                        switch (next_result) {
+                            .left => |left_node| {
+                                // Only store larger keys
+                                try parent_stack.append(allocator, current);
+                                current = left_node;
+                            },
+                            .left_null => {
+                                break; // there's no smaller key
+                            },
+                            .right => |right_node| {
+                                current = right_node;
+                            },
+                            .right_null => {
+                                // No larger values, stuck in local minima
+                                current = parent_stack.pop().?;
+                                break;
+                            },
+                            .end => {
+                                break;
+                            },
+                        }
+                    }
+
+                    return .{
+                        .parent_stack = parent_stack,
+                        .current = current,
+                    };
+                } else {
+                    @panic("empty");
+                }
             }
 
             pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
@@ -218,9 +267,7 @@ pub fn BST(comptime K: type, comptime V: type) type {
                 for (0..self.len) |_| {
                     switch (current.next(k)) {
                         .left => |left_node| current = left_node,
-                        .left_null => {
-                            break; // there's no smaller key
-                        },
+                        .left_null => break, // there's no smaller key
                         .right => |right_node| current = right_node,
                         .right_null => break, // there's no larger key
                         .end => {
@@ -238,23 +285,17 @@ pub fn BST(comptime K: type, comptime V: type) type {
             self: @This(),
             allocator: std.mem.Allocator,
         ) !Iterator {
-            return try Iterator.init(allocator, self.root, self.len);
+            return try Iterator.init(allocator, self);
         }
 
-        pub fn iterator_from(
+        pub fn iteratorFrom(
             self: @This(),
             allocator: std.mem.Allocator,
             k: K,
         ) !Iterator {
-            var node: ?*Node = switch (self.find_node(k)) {
-                .not_found => null,
-                .eq => |n| n,
-                .first_gt => |n| n,
-            };
-
             // TODO: better 'length' heurestic than the number of nodes in tree
             // This will over allocate
-            return try Iterator.init(allocator, node, self.len);
+            return try Iterator.initFrom(allocator, self, k);
         }
     };
 }
