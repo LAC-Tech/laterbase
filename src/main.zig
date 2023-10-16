@@ -77,15 +77,20 @@ test "BST" {
     try std.testing.expectEqual(@as(u64, 1), bst.root.?.left.?.val);
     try std.testing.expectEqual(@as(u64, 0), bst.root.?.right.?.val);
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var iter = try bst.iterator(arena.allocator());
-    defer iter.deinit(arena.allocator());
+    var iter = try bst.iterator(std.testing.allocator);
+    defer iter.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(u64, 0), iter.next().?.key_ptr.*);
     try std.testing.expectEqual(@as(u64, 2), iter.next().?.key_ptr.*);
     try std.testing.expectEqual(@as(u64, 4), iter.next().?.key_ptr.*);
     try std.testing.expectEqual(@as(u64, 10), iter.next().?.key_ptr.*);
+
+    var iter2 = try bst.iterator_from(std.testing.allocator, 1);
+    defer iter2.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(u64, 2), iter2.next().?.key_ptr.*);
+    try std.testing.expectEqual(@as(u64, 4), iter2.next().?.key_ptr.*);
+    //try std.testing.expectEqual(@as(u64, 10), iter2.next().?.key_ptr.*);
 }
 
 test "Logical Clock" {

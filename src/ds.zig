@@ -201,7 +201,13 @@ pub fn BST(comptime K: type, comptime V: type) type {
             allocator: std.mem.Allocator,
             k: K,
         ) !Iterator {
-            var node = self.find_node(k);
+            var node: ?*Node = switch (self.find_node(k)) {
+                .not_found => null,
+                .eq => |n| n,
+                .first_gt => |n| n,
+            };
+
+            std.debug.print("{?}", .{node});
             // TODO: better 'length' heurestic than the number of nodes in tree
             // This will over allocate
             return try Iterator.init(allocator, node, self.len);
