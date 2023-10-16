@@ -115,7 +115,7 @@ pub fn BST(comptime K: type, comptime V: type) type {
             right: *Node,
             left_null: void,
             right_null: void,
-            stop: void,
+            end: void,
         };
 
         fn next_node(current: *Node, k: K) NextNode {
@@ -132,7 +132,7 @@ pub fn BST(comptime K: type, comptime V: type) type {
                     return .{ .right_null = {} };
                 }
             } else {
-                return .{ .stop = {} };
+                return .{ .end = {} };
             }
         }
 
@@ -158,7 +158,7 @@ pub fn BST(comptime K: type, comptime V: type) type {
                             current.*.right = new_node;
                             break;
                         },
-                        .stop => {
+                        .end => {
                             std.debug.panic("Attempted to add duplicate key {}", .{k});
                         },
                     }
@@ -190,7 +190,10 @@ pub fn BST(comptime K: type, comptime V: type) type {
                         },
                         .right => |right_node| current = right_node,
                         .right_null => break, // there's no larger key
-                        .stop => result = .{ .eq = current },
+                        .end => {
+                            result = .{ .eq = current };
+                            break;
+                        },
                     }
                 }
             }
