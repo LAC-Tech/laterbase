@@ -18,8 +18,9 @@ fn LocalReplica(comptime Payload: type) type {
 
         // The log is the source of truth. Everything else is just a cache!
         log: Log,
-        // This is an "operational index" - needed for the replica to work, but
-        // not the source of truth
+        // This is an "operational index" - needed for a replica to work.
+        // Used to prevent adding duplicates to the log, and for read queries
+        // It is not a source of truth - only the log is
         id_index: IdIndex,
         // Each replica should have its own storage
         allocator: std.mem.Allocator,
@@ -27,35 +28,42 @@ fn LocalReplica(comptime Payload: type) type {
         fn init(allocator: std.mem.Allocator) !@This() {
             return .{
                 .log = try Log.initCapacity(allocator, maxNumEvents),
-                .id_index = IdIndex.init(),
+                .id_index = try IdIndex.init(allocator, maxNumEvents),
                 .allocator = allocator,
             };
         }
 
         fn deinit(self: *@This()) void {
             self.log.deinit(self.allocator);
-            self.id_index.deinit(self.allocator);
+            self.id_index.deinit();
         }
 
-        fn read(self: @This(), query: Query) []const inter.Event(Payload) {
-            _ = query;
-            _ = self;
-        }
+        // fn read(self: @This(), query: Query) []const inter.Event(Payload) {
+        //     switch (query.time) {
+        //         .logical_txn => self.log.items[query.limit..],
+        //         .physical_valid => {
+        //             self.id_index
+
+        //             // eventIdIndex
+        //             // |> Seq.skip query.Limit
+        //             // |> Seq.map (fun (k, i) -> (k, snd log[i]))
+        //         }
+        //     }
+        // }
     };
 }
 
 test "BST" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var bst = ds.BST(u64, u64).init();
+    var bst = try ds.BST(u64, u64).init(std.testing.allocator, 8);
+    defer bst.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), bst.len);
 
     // TODO: some kind of 'from iterator' ? how do std lib containers do it?
-    try bst.put(arena.allocator(), 4, 2);
-    try bst.put(arena.allocator(), 0, 1);
-    try bst.put(arena.allocator(), 10, 0);
-    try bst.put(arena.allocator(), 2, 20);
+    try bst.put(4, 2);
+    try bst.put(0, 1);
+    try bst.put(10, 0);
+    try bst.put(2, 20);
 
     try std.testing.expectEqual(@as(usize, 4), bst.len);
     try std.testing.expectEqual(@as(?u64, 2), bst.get(4));
@@ -66,6 +74,8 @@ test "BST" {
     try std.testing.expectEqual(@as(u64, 1), bst.root.?.left.?.val);
     try std.testing.expectEqual(@as(u64, 0), bst.root.?.right.?.val);
 
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
     var iter = try bst.iterator(arena.allocator());
     defer iter.deinit(arena.allocator());
 

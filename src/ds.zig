@@ -5,18 +5,16 @@ const std = @import("std");
 // Binary Search Tree
 // Implementing this because Zig doesn't have kind of sorted map
 // Also, this is the simplest one I could think of
+
+// TODO: "Performance Analysis of BSTs in System Software" (Pfaff, 2003)
+// Paper suggets Splay trees or what we want
+// AVL trees are second best, and do not modify tree when searching
 pub fn BST(comptime K: type, comptime V: type) type {
     const Node = struct {
         key: K,
         val: V,
         left: ?*@This(),
         right: ?*@This(),
-
-        fn init(allocator: std.mem.Allocator, k: K, v: V) !*@This() {
-            var result = try allocator.create(@This());
-            result.* = .{ .key = k, .val = v, .left = null, .right = null };
-            return result;
-        }
     };
 
     return struct {
@@ -95,24 +93,28 @@ pub fn BST(comptime K: type, comptime V: type) type {
         pub fn init(
             allocator: std.mem.Allocator,
             initial_size: usize,
-        ) @This() {
+        ) !@This() {
             return .{
                 .root = null,
                 .len = 0,
-                .allocator = std.heap.MemoryPool(Node).initPreheated(
+                .allocator = try std.heap.MemoryPool(Node).initPreheated(
                     allocator,
                     initial_size,
                 ),
             };
         }
 
+        pub fn deinit(self: *@This()) void {
+            self.allocator.deinit();
+        }
+
         pub fn put(
             self: *@This(),
-            allocator: std.mem.Allocator,
             k: K,
             v: V,
         ) !void {
-            var new_node = try Node.init(allocator, k, v);
+            var new_node = try self.allocator.create();
+            new_node.* = .{ .key = k, .val = v, .left = null, .right = null };
 
             if (self.root) |root| {
                 var current: *Node = root;
@@ -144,7 +146,7 @@ pub fn BST(comptime K: type, comptime V: type) type {
             self.len += 1;
         }
 
-        pub fn get(self: @This(), k: K) ?V {
+        fn find_node(self: @This(), k: K) ?*Node {
             if (self.root) |root| {
                 var current: *Node = root;
 
@@ -166,14 +168,36 @@ pub fn BST(comptime K: type, comptime V: type) type {
                     }
                 }
 
-                return current.val;
+                return current;
             }
 
             return null;
         }
 
-        pub fn iterator(self: @This(), allocator: std.mem.Allocator) !Iterator {
+        pub fn get(self: @This(), k: K) ?V {
+            if (self.find_node(k)) |node| {
+                return node.val;
+            }
+
+            return null;
+        }
+
+        pub fn iterator(
+            self: @This(),
+            allocator: std.mem.Allocator,
+        ) !Iterator {
             return try Iterator.init(allocator, self.root, self.len);
+        }
+
+        pub fn iterator_from(
+            self: @This(),
+            allocator: std.mem.Allocator,
+            k: K,
+        ) !Iterator {
+            var node = self.find_node(k);
+            // TODO: better 'length' heurestic than the number of nodes in tree
+            // This will over allocate
+            return try Iterator.init(allocator, node, self.len);
         }
     };
 }
