@@ -22,6 +22,7 @@ pub fn BST(comptime K: type, comptime V: type) type {
     return struct {
         root: ?*Node,
         len: usize,
+        allocator: std.heap.MemoryPool(Node),
 
         const Self = @This();
         const Entry = struct { key_ptr: *K, value_ptr: *V };
@@ -31,12 +32,16 @@ pub fn BST(comptime K: type, comptime V: type) type {
             parent_stack: ParentStack,
             current: ?*Node,
 
-            pub fn init(bst: Self, allocator: std.mem.Allocator) !@This() {
+            pub fn init(
+                allocator: std.mem.Allocator,
+                node: ?*Node,
+                initial_size: usize,
+            ) !@This() {
                 var parent_stack =
-                    try ParentStack.initCapacity(allocator, bst.len);
-                var current = bst.root;
+                    try ParentStack.initCapacity(allocator, initial_size);
+                var current = node;
 
-                for (0..bst.len) |_| {
+                for (0..initial_size) |_| {
                     if (current) |c| {
                         if (c.left) |left| {
                             try parent_stack.append(allocator, current);
@@ -87,8 +92,18 @@ pub fn BST(comptime K: type, comptime V: type) type {
             }
         };
 
-        pub fn init() @This() {
-            return .{ .root = null, .len = 0 };
+        pub fn init(
+            allocator: std.mem.Allocator,
+            initial_size: usize,
+        ) @This() {
+            return .{
+                .root = null,
+                .len = 0,
+                .allocator = std.heap.MemoryPool(Node).initPreheated(
+                    allocator,
+                    initial_size,
+                ),
+            };
         }
 
         pub fn put(
@@ -158,7 +173,7 @@ pub fn BST(comptime K: type, comptime V: type) type {
         }
 
         pub fn iterator(self: @This(), allocator: std.mem.Allocator) !Iterator {
-            return try Iterator.init(self, allocator);
+            return try Iterator.init(allocator, self.root, self.len);
         }
     };
 }

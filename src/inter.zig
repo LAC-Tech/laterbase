@@ -29,11 +29,7 @@ pub const EventId = packed struct {
 };
 
 pub fn Event(comptime Payload: type) type {
-    return struct {
-        id: EventId,
-        origin: Address,
-        payload: Payload,
-    };
+    return struct { id: EventId, origin: Address, payload: Payload };
 }
 
 // Receiving these messages must be idempotent

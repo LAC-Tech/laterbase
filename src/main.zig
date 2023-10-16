@@ -14,8 +14,7 @@ fn LocalReplica(comptime Payload: type) type {
         const maxNumEvents = 10_000;
 
         const Log = std.ArrayListUnmanaged(inter.Event(Payload));
-
-        const IdIndex = std.AutoHashMapUnmanaged(inter.EventId, u64);
+        const IdIndex = ds.BST(inter.EventId, u64);
 
         // The log is the source of truth. Everything else is just a cache!
         log: Log,
@@ -26,11 +25,9 @@ fn LocalReplica(comptime Payload: type) type {
         allocator: std.mem.Allocator,
 
         fn init(allocator: std.mem.Allocator) !@This() {
-            var id_index: IdIndex = .{};
-            try id_index.ensureTotalCapacity(allocator, maxNumEvents);
             return .{
                 .log = try Log.initCapacity(allocator, maxNumEvents),
-                .id_index = id_index,
+                .id_index = IdIndex.init(),
                 .allocator = allocator,
             };
         }
