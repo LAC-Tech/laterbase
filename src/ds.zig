@@ -15,9 +15,41 @@ pub fn BST(comptime K: type, comptime V: type) type {
         val: V,
         left: ?*@This(),
         right: ?*@This(),
+
+        const Self = @This();
+
+        const Next = union(enum) {
+            left: *Self,
+            right: *Self,
+            left_null: void,
+            right_null: void,
+            end: void,
+        };
+
+        fn next(self: @This(), k: K) Next {
+            if (self.key > k) {
+                if (self.left) |left_node| {
+                    return .{ .left = left_node };
+                } else {
+                    return .{ .left_null = {} };
+                }
+            } else if (k > self.key) {
+                if (self.right) |right_node| {
+                    return .{ .right = right_node };
+                } else {
+                    return .{ .right_null = {} };
+                }
+            } else {
+                return .{ .end = {} };
+            }
+        }
     };
 
-    const FoundNode = union(enum) { first_gt: *Node, eq: *Node, not_found: void };
+    const FoundNode = union(enum) {
+        first_gt: *Node,
+        eq: *Node,
+        not_found: void,
+    };
 
     return struct {
         root: ?*Node,
@@ -110,32 +142,6 @@ pub fn BST(comptime K: type, comptime V: type) type {
             self.allocator.deinit();
         }
 
-        const NextNode = union(enum) {
-            left: *Node,
-            right: *Node,
-            left_null: void,
-            right_null: void,
-            end: void,
-        };
-
-        fn next_node(current: *Node, k: K) NextNode {
-            if (current.*.key > k) {
-                if (current.*.left) |left_node| {
-                    return .{ .left = left_node };
-                } else {
-                    return .{ .left_null = {} };
-                }
-            } else if (k > current.*.key) {
-                if (current.*.right) |right_node| {
-                    return .{ .right = right_node };
-                } else {
-                    return .{ .right_null = {} };
-                }
-            } else {
-                return .{ .end = {} };
-            }
-        }
-
         pub fn put(
             self: *@This(),
             k: K,
@@ -147,7 +153,7 @@ pub fn BST(comptime K: type, comptime V: type) type {
             if (self.root) |root| {
                 var current: *Node = root;
                 for (0..self.len) |_| {
-                    switch (next_node(current, k)) {
+                    switch (current.next(k)) {
                         .left => |left_node| current = left_node,
                         .right => |right_node| current = right_node,
                         .left_null => {
@@ -159,7 +165,10 @@ pub fn BST(comptime K: type, comptime V: type) type {
                             break;
                         },
                         .end => {
-                            std.debug.panic("Attempted to add duplicate key {}", .{k});
+                            std.debug.panic(
+                                "Attempted to add duplicate key {}",
+                                .{k},
+                            );
                         },
                     }
                 }
@@ -179,7 +188,7 @@ pub fn BST(comptime K: type, comptime V: type) type {
                 var current: *Node = root;
 
                 for (0..self.len) |_| {
-                    switch (next_node(current, k)) {
+                    switch (current.next(k)) {
                         .left => |left_node| {
                             result = .{ .first_gt = current };
                             current = left_node;
@@ -202,10 +211,27 @@ pub fn BST(comptime K: type, comptime V: type) type {
         }
 
         pub fn get(self: @This(), k: K) ?V {
-            return switch (self.find_node(k)) {
-                .eq => |node| node.val,
-                else => null,
-            };
+            var result: ?V = null;
+            if (self.root) |root| {
+                var current: *Node = root;
+
+                for (0..self.len) |_| {
+                    switch (current.next(k)) {
+                        .left => |left_node| current = left_node,
+                        .left_null => {
+                            break; // there's no smaller key
+                        },
+                        .right => |right_node| current = right_node,
+                        .right_null => break, // there's no larger key
+                        .end => {
+                            result = current.val;
+                            break;
+                        },
+                    }
+                }
+            }
+
+            return result;
         }
 
         pub fn iterator(
