@@ -7,7 +7,10 @@ pub fn main() void {
     std.debug.print("gettin ziggy wit it", .{});
 }
 
-const Query = struct { time: time.Type, limit: u64 };
+const Query = union(time.Type) {
+    logical_txn: u64,
+    physical_valid: i64,
+};
 
 fn LocalReplica(comptime Payload: type) type {
     return struct {
@@ -38,18 +41,18 @@ fn LocalReplica(comptime Payload: type) type {
             self.id_index.deinit();
         }
 
-        // fn read(self: @This(), query: Query) []const inter.Event(Payload) {
-        //     switch (query.time) {
-        //         .logical_txn => self.log.items[query.limit..],
-        //         .physical_valid => {
-        //             self.id_index
+        fn read(self: @This(), query: Query) []const inter.Event(Payload) {
+            switch (query.time) {
+                .logical_txn => self.log.items[query.limit..],
+                // .physical_valid => {
+                //     self.id_index.iterator_from(query., k: K)
 
-        //             // eventIdIndex
-        //             // |> Seq.skip query.Limit
-        //             // |> Seq.map (fun (k, i) -> (k, snd log[i]))
-        //         }
-        //     }
-        // }
+                //     // eventIdIndex
+                //     // |> Seq.skip query.Limit
+                //     // |> Seq.map (fun (k, i) -> (k, snd log[i]))
+                // }
+            }
+        }
     };
 }
 

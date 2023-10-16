@@ -17,6 +17,8 @@ pub fn BST(comptime K: type, comptime V: type) type {
         right: ?*@This(),
     };
 
+    const FoundNode = union(enum) { first_gt: *Node, eq: *Node, not_found: void };
+
     return struct {
         root: ?*Node,
         len: usize,
@@ -146,40 +148,45 @@ pub fn BST(comptime K: type, comptime V: type) type {
             self.len += 1;
         }
 
-        fn find_node(self: @This(), k: K) ?*Node {
+        // Can be used for prefix scans
+        fn find_node(self: @This(), k: K) FoundNode {
+            var result: FoundNode = .{ .not_found = {} };
+
             if (self.root) |root| {
                 var current: *Node = root;
 
                 for (0..self.len) |_| {
-                    if (k < current.*.key) {
+                    if (current.*.key > k) {
+                        // Keep track of what the latest key that's bigger is
+                        result = .{ .first_gt = current };
                         if (current.*.left) |left_node| {
                             current = left_node;
                         } else {
-                            return null;
+                            // There's no smaller key
+                            break;
                         }
                     } else if (k > current.*.key) {
                         if (current.*.right) |right_node| {
                             current = right_node;
                         } else {
-                            return null;
+                            // there's no larger key;
+                            break;
                         }
                     } else {
+                        result = .{ .eq = current };
                         break;
                     }
                 }
-
-                return current;
             }
 
-            return null;
+            return result;
         }
 
         pub fn get(self: @This(), k: K) ?V {
-            if (self.find_node(k)) |node| {
-                return node.val;
-            }
-
-            return null;
+            return switch (self.find_node(k)) {
+                .eq => |node| node.val,
+                else => null,
+            };
         }
 
         pub fn iterator(
