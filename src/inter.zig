@@ -1,5 +1,6 @@
 // Inter-replica data - that is to say data sent between replicas
 
+const std = @import("std");
 const time = @import("time.zig");
 
 // A unique ID for a replica, and a destination to send messages to
@@ -16,6 +17,15 @@ pub const EventId = packed struct {
         return .{
             .physical_time = @truncate(physical_time),
             .randomness = randomness,
+        };
+    }
+
+    pub fn order(a: @This(), b: @This()) std.math.Order {
+        var t_order = std.math.order(a.physical_time, b.physical_time);
+
+        return switch (t_order) {
+            .eq => std.math.order(a.randomness, b.randomness),
+            else => t_order,
         };
     }
 

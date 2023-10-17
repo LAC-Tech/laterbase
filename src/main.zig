@@ -19,7 +19,7 @@ fn LocalReplica(comptime Payload: type) type {
         const maxNumEvents = 10_000;
 
         const Log = std.ArrayListUnmanaged(inter.Event(Payload));
-        const IdIndex = ds.BST(inter.EventId, u64);
+        const IdIndex = ds.BST(inter.EventId, u64, inter.EventId.order);
 
         // The log is the source of truth. Everything else is just a cache!
         log: Log,
@@ -78,7 +78,7 @@ fn LocalReplica(comptime Payload: type) type {
 }
 
 test "BST" {
-    var bst = try ds.BST(u64, u64).init(std.testing.allocator, 8);
+    var bst = try ds.BST(u64, u64, std.math.order).init(std.testing.allocator, 8);
     defer bst.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), bst.len);

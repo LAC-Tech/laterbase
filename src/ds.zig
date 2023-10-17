@@ -9,7 +9,11 @@ const std = @import("std");
 // TODO: "Performance Analysis of BSTs in System Software" (Pfaff, 2003)
 // Paper suggets Splay trees or what we want
 // AVL trees are second best, and do not modify tree when searching
-pub fn BST(comptime K: type, comptime V: type) type {
+pub fn BST(
+    comptime K: type,
+    comptime V: type,
+    comptime compare: anytype,
+) type {
     const Node = struct {
         key: K,
         val: V,
@@ -27,20 +31,18 @@ pub fn BST(comptime K: type, comptime V: type) type {
         };
 
         fn next(self: @This(), k: K) Next {
-            if (self.key > k) {
-                if (self.left) |left_node| {
+            switch (compare(self.key, k)) {
+                .gt => if (self.left) |left_node| {
                     return .{ .left = left_node };
                 } else {
                     return .{ .left_null = {} };
-                }
-            } else if (k > self.key) {
-                if (self.right) |right_node| {
+                },
+                .lt => if (self.right) |right_node| {
                     return .{ .right = right_node };
                 } else {
                     return .{ .right_null = {} };
-                }
-            } else {
-                return .{ .end = {} };
+                },
+                .eq => return .{ .end = {} },
             }
         }
     };
