@@ -9,15 +9,13 @@ pub const Address = struct { bytes: []u8 };
 // Not inside Event struct because an ID is not generic
 // TODO: move back in when an Event is no longer generic??
 pub const EventId = packed struct {
-    physical_time: u48,
+    physical_time: i48,
     randomness: u80,
 
-    pub fn init(physical_time: i64, rand_bytes: [10]u8) @This() {
-        var signed_time: u64 = @intCast(physical_time);
-
+    pub fn init(physical_time: i64, randomness: u80) @This() {
         return .{
-            .timestamp = @truncate(signed_time),
-            .randomness = @as(u80, @bitCast(rand_bytes)),
+            .physical_time = @truncate(physical_time),
+            .randomness = randomness,
         };
     }
 

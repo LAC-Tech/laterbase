@@ -43,11 +43,30 @@ fn LocalReplica(comptime Payload: type) type {
             self.id_index.deinit();
         }
 
-        fn read(self: @This(), query: Query) []const inter.Event(Payload) {
-            switch (query.time) {
-                .logical_txn => self.log.items[query.limit..],
-                // .physical_valid => {
-                //     self.id_index.iterator_from(query., k: K)
+        fn read(
+            self: @This(),
+            comptime B: fn (comptime type) type,
+            buf: *B(inter.Event(Payload)),
+            query: Query,
+        ) !void {
+            switch (query) {
+                .logical_txn => |n| {
+                    var events = self.log.items[n..];
+                    try buf.appendSlice(events);
+                },
+                .physical_valid => |n| {
+                    var prefix_key = inter.EventId.init(n, 0);
+                    var it = try self.id_index.iteratorFrom(
+                        self.allocator,
+                        prefix_key,
+                    );
+                    defer it.deinit(self.allocator);
+
+                    while (it.next()) |entry| {
+                        var index = entry.value_ptr.*;
+                        try buf.append(self.log.items[index]);
+                    }
+                },
 
                 //     // eventIdIndex
                 //     // |> Seq.skip query.Limit
@@ -104,6 +123,11 @@ test "Logical Clock" {
 }
 
 test "Local Replica" {
-    var r = try LocalReplica(u64).init(std.testing.allocator);
+    var r = try LocalReplica(u8).init(std.testing.allocator);
     defer r.deinit();
+
+    var events = std.ArrayList(inter.Event(u8)).init(std.testing.allocator);
+    defer events.deinit();
+
+    try r.read(std.ArrayList, &events, .{ .logical_txn = 0 });
 }
