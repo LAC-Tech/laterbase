@@ -1,7 +1,7 @@
 // Inter-replica data - that is to say data sent between replicas
 
 const std = @import("std");
-const time = @import("time.zig");
+const time = @import("./time.zig");
 
 // A unique ID for a replica, and a destination to send messages to
 // TODO: heap allocated bytes won't work across a network
@@ -50,6 +50,6 @@ pub fn Message(comptime Payload: type) type {
             until: time.Counter,
             src: Address,
         },
-        store_new: []const .{ EventId, Payload },
+        store_new: []const struct { EventId, Payload },
     };
 }
