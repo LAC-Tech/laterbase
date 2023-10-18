@@ -13,7 +13,7 @@ test {
     _ = ExampleTests;
 }
 
-const RNGTests = struct {
+const SeededTests = struct {
     rng: std.rand.Xoshiro256,
 
     fn init(seed: u64) @This() {
