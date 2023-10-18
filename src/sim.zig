@@ -7,17 +7,26 @@ pub fn main() void {
     std.debug.print("gettin ziggy wit it", .{});
 }
 
-const Query = union(time.Type) {
-    logical_txn: u64,
-    physical_valid: i64,
-};
-
 const expectEqual = std.testing.expectEqual;
 
-test "Logical Clock" {
-    var lc = try time.LogicalClock.init(std.testing.allocator);
-    defer lc.deinit(std.testing.allocator);
+test {
+    _ = ExampleTests;
 }
+
+const RNGTests = struct {
+    rng: std.rand.Xoshiro256,
+
+    fn init(seed: u64) @This() {
+        return .{ .rng = std.rand.DefaultPrng.init(seed) };
+    }
+};
+
+const ExampleTests = struct {
+    test "Logical Clock" {
+        var lc = try time.LogicalClock.init(std.testing.allocator);
+        defer lc.deinit(std.testing.allocator);
+    }
+};
 
 test "Local Replica" {
     //var addr_bytes = [_]u8{0} ** 16;
