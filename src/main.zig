@@ -3,8 +3,6 @@ const ds = @import("ds.zig");
 const inter = @import("inter.zig");
 const time = @import("time.zig");
 
-const expectEqual = std.testing.expectEqual;
-
 pub fn main() void {
     std.debug.print("gettin ziggy wit it", .{});
 }
@@ -67,55 +65,12 @@ fn LocalReplica(comptime Payload: type) type {
                         try buf.append(self.log.items[index]);
                     }
                 },
-
-                //     // eventIdIndex
-                //     // |> Seq.skip query.Limit
-                //     // |> Seq.map (fun (k, i) -> (k, snd log[i]))
-                // }
             }
         }
     };
 }
 
-test "BST" {
-    var bst = try ds.BST(u64, u64, std.math.order).init(std.testing.allocator, 8);
-    defer bst.deinit();
-
-    try std.testing.expectEqual(@as(usize, 0), bst.len);
-
-    // TODO: some kind of 'from iterator' ? how do std lib containers do it?
-    try bst.put(4, 2);
-    try bst.put(0, 1);
-    try bst.put(10, 0);
-    try bst.put(2, 20);
-
-    try expectEqual(@as(usize, 4), bst.len);
-    try expectEqual(@as(?u64, 2), bst.get(4));
-    try expectEqual(@as(?u64, null), bst.get(27));
-
-    // Try and see what the shape of the tree is
-    try expectEqual(@as(u64, 2), bst.root.?.val);
-    try expectEqual(@as(u64, 1), bst.root.?.left.?.val);
-    try expectEqual(@as(u64, 0), bst.root.?.right.?.val);
-
-    var iter = try bst.iterator(std.testing.allocator);
-    defer iter.deinit(std.testing.allocator);
-    try expectEqual(@as(u64, 0), iter.next().?.key_ptr.*);
-    try expectEqual(@as(u64, 2), iter.next().?.key_ptr.*);
-    try expectEqual(@as(u64, 4), iter.next().?.key_ptr.*);
-    try expectEqual(@as(u64, 10), iter.next().?.key_ptr.*);
-
-    var iter2 = try bst.iteratorFrom(std.testing.allocator, 1);
-    defer iter2.deinit(std.testing.allocator);
-    try expectEqual(@as(u64, 2), iter2.next().?.key_ptr.*);
-    try expectEqual(@as(u64, 4), iter2.next().?.key_ptr.*);
-    try expectEqual(@as(u64, 10), iter2.next().?.key_ptr.*);
-
-    var iter3 = try bst.iteratorFrom(std.testing.allocator, 3);
-    defer iter3.deinit(std.testing.allocator);
-    try expectEqual(@as(u64, 4), iter3.next().?.key_ptr.*);
-    try expectEqual(@as(u64, 10), iter3.next().?.key_ptr.*);
-}
+const expectEqual = std.testing.expectEqual;
 
 test "Logical Clock" {
     var lc = try time.LogicalClock.init(std.testing.allocator);
@@ -130,4 +85,6 @@ test "Local Replica" {
     defer events.deinit();
 
     try r.read(std.ArrayList, &events, .{ .logical_txn = 0 });
+
+    try expectEqual(@as(u64, 0), events.items.len);
 }
