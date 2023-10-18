@@ -22,7 +22,7 @@ const Address = @import("msg").Address;
 //             seq().GetEnumerator()
 
 // Logical counter that tracks a position in a replicas log.
-const Counter = packed struct {
+pub const Counter = packed struct {
     raw: u64,
     const zero: @This() = .{ .raw = 0 };
     // TODO: is this even needed?
